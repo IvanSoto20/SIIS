@@ -1,0 +1,194 @@
+{
+  "descripcion": "Arnes de evaluacion honesta de la zona roja (FEAT-001). Reproduce el PISO en OOF (5 pliegues) y en el Test reservado. Base contra la que FEAT-004 comparara las variantes.",
+  "panel": {
+    "total": 19937,
+    "positivos": 304,
+    "train": 15949,
+    "train_pos": 243,
+    "test": 3988,
+    "test_pos": 61,
+    "features": 90
+  },
+  "escuadron": [
+    "LightGBM",
+    "XGBoost",
+    "HistGradientBoosting",
+    "RandomForest"
+  ],
+  "piso_reproducido": {
+    "oof": {
+      "n": 19937,
+      "positivos": 304,
+      "roc_auc": 0.8867,
+      "pr_auc": 0.2534,
+      "cortes": {
+        "0.5": {
+          "alertas": 100,
+          "tp": 50,
+          "precision_pct": 50.0,
+          "recall_pct": 16.45,
+          "lift": 32.79
+        },
+        "0.7": {
+          "alertas": 140,
+          "tp": 68,
+          "precision_pct": 48.57,
+          "recall_pct": 22.37,
+          "lift": 31.85
+        },
+        "1.0": {
+          "alertas": 200,
+          "tp": 85,
+          "precision_pct": 42.5,
+          "recall_pct": 27.96,
+          "lift": 27.87
+        },
+        "1.2": {
+          "alertas": 240,
+          "tp": 94,
+          "precision_pct": 39.17,
+          "recall_pct": 30.92,
+          "lift": 25.69
+        },
+        "2.5": {
+          "alertas": 499,
+          "tp": 124,
+          "precision_pct": 24.85,
+          "recall_pct": 40.79,
+          "lift": 16.3
+        },
+        "5.0": {
+          "alertas": 997,
+          "tp": 159,
+          "precision_pct": 15.95,
+          "recall_pct": 52.3,
+          "lift": 10.46
+        },
+        "10.0": {
+          "alertas": 1994,
+          "tp": 206,
+          "precision_pct": 10.33,
+          "recall_pct": 67.76,
+          "lift": 6.78
+        }
+      },
+      "f1_max": {
+        "f1": 0.3531,
+        "precision_pct": 35.43,
+        "recall_pct": 35.2,
+        "umbral": 0.4221,
+        "alertas": 302
+      }
+    },
+    "test": {
+      "n": 3988,
+      "positivos": 61,
+      "roc_auc": 0.8782,
+      "pr_auc": 0.3115,
+      "cortes": {
+        "0.5": {
+          "alertas": 20,
+          "tp": 12,
+          "precision_pct": 60.0,
+          "recall_pct": 19.67,
+          "lift": 39.23
+        },
+        "0.7": {
+          "alertas": 28,
+          "tp": 14,
+          "precision_pct": 50.0,
+          "recall_pct": 22.95,
+          "lift": 32.69
+        },
+        "1.0": {
+          "alertas": 40,
+          "tp": 19,
+          "precision_pct": 47.5,
+          "recall_pct": 31.15,
+          "lift": 31.05
+        },
+        "1.2": {
+          "alertas": 48,
+          "tp": 21,
+          "precision_pct": 43.75,
+          "recall_pct": 34.43,
+          "lift": 28.6
+        },
+        "2.5": {
+          "alertas": 100,
+          "tp": 27,
+          "precision_pct": 27.0,
+          "recall_pct": 44.26,
+          "lift": 17.65
+        },
+        "5.0": {
+          "alertas": 200,
+          "tp": 32,
+          "precision_pct": 16.0,
+          "recall_pct": 52.46,
+          "lift": 10.46
+        },
+        "10.0": {
+          "alertas": 399,
+          "tp": 38,
+          "precision_pct": 9.52,
+          "recall_pct": 62.3,
+          "lift": 6.23
+        }
+      },
+      "f1_max": {
+        "f1": 0.4144,
+        "precision_pct": 46.0,
+        "recall_pct": 37.7,
+        "umbral": 0.5199,
+        "alertas": 50
+      }
+    }
+  },
+  "piso_publicado": {
+    "oof": {
+      "roc_auc": 0.8867,
+      "pr_auc": 0.2534,
+      "top1pct_tp_aprox": 85,
+      "top1pct_alertas_aprox": 200
+    },
+    "test": {
+      "roc_auc": 0.8782,
+      "pr_auc": 0.3115,
+      "f1_optimo": 0.4144,
+      "top1pct_tp": 19,
+      "top1pct_alertas": 40
+    }
+  },
+  "auto_validacion": {
+    "oof_roc": {
+      "obtenido": 0.8867,
+      "esperado": 0.8867,
+      "diferencia_abs": 0.0,
+      "tolerancia": 0.003,
+      "reproduce": true
+    },
+    "oof_pr": {
+      "obtenido": 0.2534,
+      "esperado": 0.2534,
+      "diferencia_abs": 0.0,
+      "tolerancia": 0.003,
+      "reproduce": true
+    },
+    "test_roc": {
+      "obtenido": 0.8782,
+      "esperado": 0.8782,
+      "diferencia_abs": 0.0,
+      "tolerancia": 0.003,
+      "reproduce": true
+    },
+    "test_pr": {
+      "obtenido": 0.3115,
+      "esperado": 0.3115,
+      "diferencia_abs": 0.0,
+      "tolerancia": 0.003,
+      "reproduce": true
+    }
+  },
+  "segundos_totales": 69.1
+}

@@ -1,0 +1,52 @@
+{
+  "n_columnas_continuas": 68,
+  "umbral_ks_alto": 0.15,
+  "vs_2024": {
+    "2021": {
+      "ks_medio": 0.0355,
+      "ks_max": 0.1688,
+      "ks_max_columna": "Carga_Impositiva_DIAN",
+      "columnas_ks_mayor_umbral": [
+        "Carga_Impositiva_DIAN"
+      ],
+      "valor_critico_5pct": 0.0127
+    },
+    "2022": {
+      "ks_medio": 0.0276,
+      "ks_max": 0.1,
+      "ks_max_columna": "Edad_Empresa_Anios",
+      "columnas_ks_mayor_umbral": [],
+      "valor_critico_5pct": 0.0125
+    },
+    "2023": {
+      "ks_medio": 0.017,
+      "ks_max": 0.0638,
+      "ks_max_columna": "Edad_Empresa_Anios",
+      "columnas_ks_mayor_umbral": [],
+      "valor_critico_5pct": 0.0125
+    }
+  },
+  "deriva_natural_2022_vs_2023": {
+    "ks_medio": 0.0176
+  },
+  "medianas_clave": {
+    "Edad_Empresa_Anios": {
+      "2021": 16.094,
+      "2022": 16.553,
+      "2023": 17.205,
+      "2024": 18.335
+    },
+    "Nivel_Endeudamiento": {
+      "2021": 0.47,
+      "2022": 0.475,
+      "2023": 0.444,
+      "2024": 0.434
+    },
+    "Razon_Corriente": {
+      "2021": 2.12,
+      "2022": 2.091,
+      "2023": 2.216,
+      "2024": 2.285
+    }
+  }
+}

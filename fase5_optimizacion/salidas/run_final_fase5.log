@@ -1,0 +1,53 @@
+Iniciando Pipeline de Alta Precisión Forense (Fase 5 Optimizada)...
+Cargando saldos anteriores desde caché: prev_2023.pkl
+Panel 2024 -> 2025: 19937 empresas x 90 características.
+Eventos de insolvencia y quiebra en 2025: 304 (1.5248%).
+
+Entrenando Escuadrón Élite Forense sobre X_train (15,949 empresas)...
+  LightGBM_Forense       -> ROC-AUC: 0.8665 | PR-AUC: 0.3002
+  XGBoost_Forense        -> ROC-AUC: 0.8736 | PR-AUC: 0.3106
+  HistGradientBoosting   -> ROC-AUC: 0.8611 | PR-AUC: 0.2397
+  RandomForest_Forense   -> ROC-AUC: 0.8845 | PR-AUC: 0.3147
+
+---> SUPER-ENSAMBLE FORENSE 4 MODELOS (0.30*LightGBM_Forense + 0.30*XGBoost_Forense + 0.20*HistGradientBoosting + 0.20*RandomForest_Forense)
+     ROC-AUC: 0.8782 | PR-AUC: 0.3115
+
+================================================================================================
+AUDITORÍA DE EFECTIVIDAD OPERATIVA EN TEST (3,988 EMPRESAS, 61 QUIEBRAS REALES EN 2025)
+================================================================================================
+---> Corte Quirúrgico Élite (Top 0.5% más riesgoso)      : Para  20 empresas alertadas se detectaron 12 de las 61 quiebras reales ( 19.7% Recall) | Efectividad (Precisión):  60.0% (12/20) | F1: 0.2963 | Multiplicador de Riesgo (Lift): 39.2x
+---> Corte Quirúrgico Alta Precisión (Top 0.7%)          : Para  28 empresas alertadas se detectaron 14 de las 61 quiebras reales ( 23.0% Recall) | Efectividad (Precisión):  50.0% (14/28) | F1: 0.3146 | Multiplicador de Riesgo (Lift): 32.7x
+---> Zona Roja Estricta (Top 1.0% más riesgoso)          : Para  40 empresas alertadas se detectaron 19 de las 61 quiebras reales ( 31.1% Recall) | Efectividad (Precisión):  47.5% (19/40) | F1: 0.3762 | Multiplicador de Riesgo (Lift): 31.1x
+---> Zona Roja Ampliada (Top 1.2% más riesgoso)          : Para  48 empresas alertadas se detectaron 21 de las 61 quiebras reales ( 34.4% Recall) | Efectividad (Precisión):  43.8% (21/48) | F1: 0.3853 | Multiplicador de Riesgo (Lift): 28.6x
+---> Umbral Óptimo Máximo F1 (Prob >= 0.520)             : Para  50 empresas alertadas se detectaron 23 de las 61 quiebras reales ( 37.7% Recall) | Efectividad (Precisión):  46.0% (23/50) | F1: 0.4144 | Multiplicador de Riesgo (Lift): 30.1x
+---> Corte Equilibrado (Top 2.5% más riesgoso)           : Para 100 empresas alertadas se detectaron 27 de las 61 quiebras reales ( 44.3% Recall) | Efectividad (Precisión):  27.0% (27/100) | F1: 0.3354 | Multiplicador de Riesgo (Lift): 17.7x
+---> Corte Cobertura Media (Top 5.0% más riesgoso)       : Para 200 empresas alertadas se detectaron 32 de las 61 quiebras reales ( 52.5% Recall) | Efectividad (Precisión):  16.0% (32/200) | F1: 0.2452 | Multiplicador de Riesgo (Lift): 10.5x
+---> Zona de Auditoría Preventiva (Top 10.0% más riesgoso): Para 399 empresas alertadas se detectaron 38 de las 61 quiebras reales ( 62.3% Recall) | Efectividad (Precisión):   9.5% (38/399) | F1: 0.1652 | Multiplicador de Riesgo (Lift):  6.2x
+
+================================================================================================
+DISTRIBUCIÓN DEL SEMÁFORO FORENSE DE 4 ZONAS EN TEST (2024 -> 2025)
+================================================================================================
+                                   Total_Empresas  Empresas_Quebradas  Tasa_Quiebra_Pct  Pct_Del_Total_Quiebras  Lift_vs_Promedio
+Zona                                                                                                                             
+1. VERDE (Estable / Sano)                    3589                  23          0.640847               37.704918          0.418967
+2. AMARILLO (Vigilancia / Alerta)             299                  11          3.678930               18.032787          2.405176
+3. NARANJA (Riesgo Alto)                       60                   8         13.333333               13.114754          8.716940
+4. ROJO ÉLITE (Peligro Inminente)              40                  19         47.500000               31.147541         31.054098
+
+================================================================================================
+RE-ENTRENANDO SUPER-ENSAMBLE EN EL PANEL COMPLETO (19,937 EMPRESAS) PARA PROYECCIÓN 2026
+================================================================================================
+Desempeño OOF en Panel Completo (19,937 empresas) -> ROC-AUC: 0.8867 | PR-AUC: 0.2534
+Cargando saldos anteriores desde caché: prev_2024.pkl
+
+================================================================================================
+PROYECCIÓN DEL SEMÁFORO 2026 (21,113 EMPRESAS EVALUADAS)
+================================================================================================
+                                   Total_Empresas  Probabilidad_Media  Quiebras_Esperadas
+Zona_Semaforo_2026                                                                       
+1. VERDE (Estable / Sano)                   18884              0.0057            108.4291
+2. AMARILLO (Vigilancia / Alerta)            1635              0.0523             85.5319
+3. NARANJA (Riesgo Alto)                      345              0.1462             50.4369
+4. ROJO ÉLITE (Peligro Inminente)             249              0.4396            109.4627
+
+Proceso completado con éxito. Resultados guardados en carpeta 'salidas'.

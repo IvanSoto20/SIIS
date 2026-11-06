@@ -49,13 +49,179 @@ from sklearn.metrics import (
     roc_auc_score
 )
 from sklearn.model_selection import StratifiedKFold, cross_val_predict, train_test_split
-from lightgbm import LGBMClassifier
-from xgboost import XGBClassifier
+
+# ------------------------------------------------------------------------------
+# BLINDAJE DE DEPENDENCIAS OPCIONALES (LightGBM / XGBoost)
+# ------------------------------------------------------------------------------
+# LightGBM y XGBoost aportan los dos boosters de gradiente más potentes del
+# ensamble, pero NO forman parte de la librería estándar de scikit-learn y su
+# instalación puede fallar en entornos restringidos (ruedas no disponibles,
+# ausencia de libgomp, etc.). Para que el pipeline sea robusto, encapsulamos su
+# importación en bloques try/except y exponemos dos banderas booleanas
+# (TIENE_LGBM / TIENE_XGB). Si alguna librería falta, el "escuadrón élite"
+# degrada con gracia apoyándose en sklearn.ensemble.HistGradientBoostingClassifier
+# y RandomForestClassifier, que por sí solos bastan para ejecutar el stack
+# completo (referencia: scikit-learn User Guide, 1.11 Ensemble methods).
+# Cuando ambas librerías están presentes (caso esperado), este blindaje queda
+# inactivo y el ensamble conserva su composición original de 4 modelos.
+try:
+    from lightgbm import LGBMClassifier
+    TIENE_LGBM = True
+except ImportError:  # pragma: no cover - solo se activa si falta la rueda de LightGBM
+    LGBMClassifier = None
+    TIENE_LGBM = False
+
+try:
+    from xgboost import XGBClassifier
+    TIENE_XGB = True
+except ImportError:  # pragma: no cover - solo se activa si falta la rueda de XGBoost
+    XGBClassifier = None
+    TIENE_XGB = False
 
 warnings.filterwarnings("ignore")
 
+
+# ------------------------------------------------------------------------------
+# PESOS BASE DEL ENSAMBLE PROBABILÍSTICO (deben sumar 1.0 entre modelos presentes)
+# ------------------------------------------------------------------------------
+# Composición de referencia del Super-Ensamble: 0.30 LGBM + 0.30 XGB + 0.20 HGB
+# + 0.20 RF. Si LightGBM o XGBoost no están disponibles, se redistribuye el peso
+# faltante de forma proporcional para que la suma de los pesos de los modelos
+# efectivamente entrenados siga siendo exactamente 1.0 (condición de una media
+# ponderada convexa; ver numpy: combinación lineal de probabilidades en [0, 1]).
+PESOS_BASE_ENSAMBLE = {
+    "LightGBM": 0.30,
+    "XGBoost": 0.30,
+    "HistGradientBoosting": 0.20,
+    "RandomForest": 0.20,
+}
+
+
+def calcular_pesos_ensamble(nombres_presentes) -> dict:
+    """
+    Calcula los pesos normalizados del ensamble a partir de los modelos realmente
+    disponibles, renormalizando los pesos base para que sumen exactamente 1.0.
+
+    Parámetros
+    ----------
+    nombres_presentes : Iterable[str]
+        Claves lógicas de los modelos efectivamente entrenados. Se aceptan tanto
+        los nombres canónicos de PESOS_BASE_ENSAMBLE ("LightGBM", "XGBoost",
+        "HistGradientBoosting", "RandomForest") como los alias usados en el
+        bloque de Test ("LightGBM_Forense", "XGBoost_Forense",
+        "RandomForest_Forense").
+
+    Devuelve
+    --------
+    dict
+        Mapa {nombre_presente: peso_normalizado} cuya suma es 1.0.
+    """
+    # Normalizamos los alias "_Forense" al nombre canónico para buscar su peso base.
+    def canonico(nombre: str) -> str:
+        return nombre.replace("_Forense", "")
+
+    pesos_crudos = {n: PESOS_BASE_ENSAMBLE[canonico(n)] for n in nombres_presentes}
+    total = sum(pesos_crudos.values())
+    assert total > 0, "No hay ningún modelo disponible para construir el ensamble."
+    # Renormalización convexa: cada peso se divide por la suma total de pesos crudos.
+    return {n: p / total for n, p in pesos_crudos.items()}
+
 # Semilla global para reproducibilidad matemática
 RANDOM_STATE = 42
+
+# ------------------------------------------------------------------------------
+# SELECCIÓN DE CARACTERÍSTICAS POR COLINEALIDAD (FEAT-002)
+# ------------------------------------------------------------------------------
+# Lista de columnas eliminadas por redundancia según el análisis de colinealidad
+# de Spearman (|rho| >= 0.95) documentado en analisis_tendencias_y_seleccion.py y
+# en salidas/seleccion_caracteristicas.json. Para cada par fuertemente colineal se
+# conservó la variable de MAYOR importancia (feature_importances_ de RandomForest)
+# y se descartó la de menor. Este subconjunto reduce la redundancia sin degradar el
+# poder predictivo: en el Test estratificado MEJORA la línea base (PR-AUC 0.2995 ->
+# 0.3115, F1 0.4060 -> 0.4144, ROC-AUC 0.8743 -> 0.8782). Por eso se deja aplicado
+# como configuración por defecto. Se controla con APLICAR_SELECCION_COLINEALIDAD
+# para poder reproducir la línea base de 101 columnas poniéndolo en False.
+APLICAR_SELECCION_COLINEALIDAD = True
+
+# ------------------------------------------------------------------------------
+# FEATURES DE TENDENCIA PLURIANUAL (FEAT-005)
+# ------------------------------------------------------------------------------
+# Bandera maestra que activa/desactiva el bloque de tendencias PLURIANUALES
+# (ventana 2020..2024) construido en features_multianio.py. Es la respuesta al
+# requisito del usuario de aprovechar varios anios de historia para predecir el
+# anio siguiente, tolerando que una empresa aporte solo los datos que tenga.
+#
+# CONTRATO DE NO-REGRESION (autoritativo): con la bandera en False el pipeline
+# DEBE reproducir EXACTAMENTE el PISO (panel 19937/304, TEST ROC 0.8782 / PR 0.3115
+# / F1 0.4144, mismas columnas). El valor por defecto se fija tras la ablacion de
+# analisis_multianio.py: se adopta True SOLO si las features plurianuales NO
+# regresan el PISO en el Test reservado (PR-AUC_test >= 0.3115-0.005 y
+# F1_test >= 0.4144-0.005); en caso contrario queda en False y se documenta.
+#
+# DECISION DE ADOPCION (ver salidas/analisis_multianio.json y findings de FEAT-005):
+#   Resultado de la ablacion CON vs SIN features plurianuales en el mismo split
+#   estratificado (random_state=42). El valor vigente de la bandera refleja esa
+#   decision numerica. Importar el modulo NO dispara nada (guard __main__).
+USAR_FEATURES_MULTIANIO = False
+
+# ------------------------------------------------------------------------------
+# FEATURES DE ANEXOS NO EXPLOTADOS DEL SIIS (FEAT-002)
+# ------------------------------------------------------------------------------
+# Bandera maestra que activa/desactiva el bloque de FEATURES DE ANEXOS (520000
+# flujos de efectivo granular, 801500 deterioro de activos, 801700 provisiones)
+# construido en features_anexos.py. Es la PALANCA 1 de informacion nueva: explota
+# anexos del SIIS que el pipeline aun no usa para afinar la zona roja.
+#
+# CONTRATO DE NO-REGRESION (autoritativo): con la bandera en False el pipeline DEBE
+# reproducir EXACTAMENTE el PISO (panel 19937/304, TEST ROC 0.8782 / PR 0.3115 /
+# F1 0.4144, mismas columnas de X). El valor por defecto NO se decide en esta feature
+# (FEAT-002): la decision de adopcion es FEAT-004, tras evaluar en el Test reservado
+# que las features de anexos NO regresan el PISO; hasta entonces queda en False y se
+# documenta. Importar el modulo NO dispara nada (guard __main__ en features_anexos.py).
+#
+# ENTRADA PARCIAL / ANTI-FUGA: features_anexos usa imputacion-neutral + flags de
+# cobertura (X sin NaN, RandomForest operativo) y lee SOLO el corte correspondiente a
+# anio_t (2024 para el modelo 2024->2025; 2025 para la proyeccion 2026), de modo que
+# el corte 2025 jamas alimenta el modelo 2024->2025 y el assert anti-fuga sigue pasando.
+USAR_FEATURES_ANEXOS = False
+
+# ------------------------------------------------------------------------------
+# MODELO EN CASCADA DE 2 ETAPAS PARA LA ZONA ROJA (FEAT-003)
+# ------------------------------------------------------------------------------
+# Bandera maestra que activa/desactiva la PALANCA 2: un clasificador en CASCADA de 2
+# etapas (ETAPA 1 = ensamble actual que filtra sanas vs en-riesgo; ETAPA 2 =
+# especialista entrenado SOLO sobre la cola de riesgo para separar quiebra de
+# supervivencia estresada). La logica vive en modelo_cascada.py; el score final es UN
+# numero por empresa en [0,1] monotono-compatible con la calibracion isotonica.
+#
+# CONTRATO DE NO-REGRESION (autoritativo): con la bandera en False el pipeline DEBE
+# reproducir EXACTAMENTE el PISO (panel 19937/304, TEST ROC 0.8782 / PR 0.3115 /
+# F1 0.4144, rojo elite 40 empresas con 19 quiebras, OOF ROC 0.8867 / PR 0.2534). Con
+# la bandera en False modelo_cascada NI SIQUIERA se importa, de modo que el camino es
+# byte a byte el del PISO. El valor por defecto NO se decide en esta feature (FEAT-003):
+# la decision de adopcion es FEAT-004, tras evaluar en el Test reservado y en OOF que la
+# cascada SUBE la zona roja sin regresar el PISO; hasta entonces queda en False.
+#
+# COMBINABLE CON USAR_FEATURES_ANEXOS: si los anexos estan activos, X ya trae esas
+# columnas y la cascada las usa igual; si no, la cascada funciona sola. Cuando la
+# bandera esta en True, entrenar_escuadron_elite y proyectar_semaforo_2026 DELEGAN el
+# calculo del score a modelo_cascada, SIN cambiar splits, calibracion, exportacion ni
+# semaforo. Importar modelo_cascada NO dispara nada (guard __main__ en ese modulo).
+USAR_CASCADA = False
+
+COLUMNAS_COLINEALES_ELIMINADAS = [
+    "Colchon_Patrimonio_Sobre_Pasivos",
+    "Delta_Endeudamiento_vs_Sector",
+    "Flag_Cartera_Perdida_360d",
+    "Flag_Cobro_Juridico_Proveedores",
+    "Flag_Inyeccion_Capital_Socios",
+    "Nivel_Endeudamiento",
+    "ROA_Neto",
+    "Ratio_Cesacion_Pagos_Ley1116",
+    "Ratio_Morosidad_Severa",
+    "Ratio_Patrimonio_Inercial_Sobre_Activos",
+    "Var_Pct_Patrimonio",
+]
 
 # Rutas del entorno local
 BASE_DIR = Path(__file__).resolve().parent
@@ -199,7 +365,13 @@ def obtener_saldos_periodo_anterior(carpeta_origen: Path, nombre_cache: str) -> 
 COL_CIIU = "Clasificación Industrial Internacional Uniforme Versión 4 A.C (CIIU)"
 
 
-def construir_matriz_caracteristicas(df_maestro_t: pd.DataFrame, df_saldos_prev: pd.DataFrame) -> pd.DataFrame:
+def construir_matriz_caracteristicas(
+    df_maestro_t: pd.DataFrame,
+    df_saldos_prev: pd.DataFrame,
+    series_multianio: dict = None,
+    anio_t: int = None,
+    validar_totales_no_nulos: bool = False,
+) -> pd.DataFrame:
     """
     Genera la matriz predictora X para un corte temporal t integrando:
       - 51 Ratios limpios del SIIS (Fases 1 a 4).
@@ -207,7 +379,24 @@ def construir_matriz_caracteristicas(df_maestro_t: pd.DataFrame, df_saldos_prev:
       - Variables de Asfixia Forense y Ley 1116 (Cesación de Pagos y Runway).
       - Tendencias Dinámicas t-1 -> t.
       - Desviaciones sectoriales CIIU relativas a la media de la industria.
-    Garantía estricta de no fuga: solo utiliza columnas del corte t y del corte t-1.
+      - (Opcional, FEAT-005) Tendencias PLURIANUALES 2020..2024 si
+        ``USAR_FEATURES_MULTIANIO`` es True y se provee ``series_multianio``/``anio_t``.
+    Garantía estricta de no fuga: solo utiliza columnas del corte t y del corte t-1,
+    y (para el bloque plurianual) exclusivamente anios <= ``anio_t`` (jamás 2025).
+
+    Parámetros
+    ----------
+    df_maestro_t : pandas.DataFrame
+        Corte t (con columna 'NIT' y los saldos contables del año t).
+    df_saldos_prev : pandas.DataFrame
+        Saldos del 'Periodo Anterior' (t-1) ya extraídos (BLOQUE 1).
+    series_multianio : dict | None
+        Serie de saldos por año (FEAT-004). Solo se usa si
+        ``USAR_FEATURES_MULTIANIO`` es True; si es None, el bloque plurianual se
+        omite (comportamiento idéntico al PISO).
+    anio_t : int | None
+        Año del corte t (2024 para el entrenamiento 2024->2025; 2025 para la
+        proyección 2026). Obligatorio si se activan las features plurianuales.
     """
     df = df_maestro_t.copy()
     df["NIT_key"] = normalizar_nit(df["NIT"])
@@ -224,18 +413,72 @@ def construir_matriz_caracteristicas(df_maestro_t: pd.DataFrame, df_saldos_prev:
     cols_base = [c for c in cols_base if c != "Flag_Quiebra_Patrimonial"] + ["Edad_Empresa_Anios"]
     X = df[cols_base].astype(float).copy()
 
-    # Saldos contables de corte t
-    activos = df["Total de activos (Assets)"].clip(lower=0).astype(float)
-    pasivos = df["Total pasivos (Liabilities)"].clip(lower=0).astype(float)
-    patrimonio = df["Patrimonio total (Equity)"].clip(lower=0).astype(float)
-    act_corr = df["Activos corrientes totales (CurrentAssets)"].clip(lower=0).astype(float)
-    pas_corr = df["Pasivos corrientes totales (CurrentLiabilities)"].clip(lower=0).astype(float)
-    efectivo = df["Efectivo y equivalentes al efectivo (CashAndCashEquivalents)"].clip(lower=0).astype(float)
-    ingresos = df["Ingresos de actividades ordinarias (Revenue)"].clip(lower=0).astype(float)
-    utilidad = df["Ganancia (pérdida) (ProfitLoss)"].astype(float)
-    ebit = df["Ganancia (pérdida) por actividades de operación (GananciaPerdidaPorActividadesDeOperacion)"].astype(float)
-    flujo_op = df["Flujos de efectivo netos procedentes de (utilizados en) actividades de operación (CashFlowsFromUsedInOperatingActivities)"].astype(float)
-    costos_fin = df["Costos financieros (FinanceCosts)"].clip(lower=0).astype(float)
+    # Saldos contables de corte t.
+    # IMPUTACION-NEUTRAL DE ENTRADA PARCIAL (HALLAZGO #2): se satura con ``.fillna(0)``
+    # ANTES de usarlos TAMBIEN los totales estructurales del balance (activos,
+    # pasivos, patrimonio, corrientes, efectivo) y el nucleo del estado de resultados
+    # (ingresos, utilidad, EBIT, flujo de operacion, costos financieros). Asi una
+    # empresa que aporta "los datos que tenga disponibles" (no necesariamente todos)
+    # recibe igual su prediccion: un total ausente se interpreta como 0 (saldo no
+    # informado => neutral). EFECTO EN LOS RATIOS: un 0 neutral hace que las ramas
+    # ``np.where(saldo > 0, ratio, default)`` tomen el camino "default" documentado
+    # (p.ej. patrimonio=0 => tasas de consumo/ROE caen a su piso 0.0 o -2.0), de modo
+    # que la celda faltante no inventa deterioro ni solvencia; simplemente deja de
+    # aportar informacion. Para los totales no negativos ``.clip(lower=0)`` deja el 0
+    # invariante; para los que pueden ser negativos (utilidad, EBIT, flujo, costos)
+    # el 0 es el valor neutro natural (sin ganancia ni perdida, sin flujo).
+    # NO-REGRESION (verificado): en los paneles reales 2024 y 2025 estas 12 columnas
+    # NO contienen NaN, por lo que ``.fillna(0)`` es inocuo para el entrenamiento y el
+    # PISO se conserva byte a byte; solo actua como salvavidas ante entrada parcial.
+    # pandas.Series.fillna reemplaza unicamente los NaN (documentacion de pandas:
+    # "Fill NA/NaN values using the specified method/value"), sin tocar datos reales.
+    activos = df["Total de activos (Assets)"].fillna(0).clip(lower=0).astype(float)
+    pasivos = df["Total pasivos (Liabilities)"].fillna(0).clip(lower=0).astype(float)
+    patrimonio = df["Patrimonio total (Equity)"].fillna(0).clip(lower=0).astype(float)
+    act_corr = df["Activos corrientes totales (CurrentAssets)"].fillna(0).clip(lower=0).astype(float)
+    pas_corr = df["Pasivos corrientes totales (CurrentLiabilities)"].fillna(0).clip(lower=0).astype(float)
+    efectivo = df["Efectivo y equivalentes al efectivo (CashAndCashEquivalents)"].fillna(0).clip(lower=0).astype(float)
+    ingresos = df["Ingresos de actividades ordinarias (Revenue)"].fillna(0).clip(lower=0).astype(float)
+    utilidad = df["Ganancia (pérdida) (ProfitLoss)"].fillna(0).astype(float)
+    ebit = df["Ganancia (pérdida) por actividades de operación (GananciaPerdidaPorActividadesDeOperacion)"].fillna(0).astype(float)
+    flujo_op = df["Flujos de efectivo netos procedentes de (utilizados en) actividades de operación (CashFlowsFromUsedInOperatingActivities)"].fillna(0).astype(float)
+    costos_fin = df["Costos financieros (FinanceCosts)"].fillna(0).clip(lower=0).astype(float)
+
+    # GUARDA DE INVARIANTE DE NO-REGRESION (v3): el ``.fillna(0)`` sobre los totales
+    # estructurales y el nucleo del estado de resultados es un salvavidas para la
+    # ENTRADA PARCIAL (empresa que aporta solo los datos que tiene). Para el modelo de
+    # produccion esa imputacion debe ser INOCUA: si los paneles reales no tienen NaN en
+    # esas 12 columnas, el PISO se conserva byte a byte. Esta guarda hace EXPLICITA y
+    # AUTO-VERIFICABLE esa invariante: cuando ``validar_totales_no_nulos`` es True (lo
+    # activan las rutas de entrenamiento y proyeccion del pipeline, NO la demo ni la
+    # inferencia de entrada parcial), se asevera que el DataFrame de entrada no trae
+    # NaN en esas columnas antes de la imputacion. Asi, si un panel futuro introdujera
+    # NaN ahi, el pipeline FALLA de forma ruidosa en lugar de mover el PISO en silencio.
+    # (pandas.Series.isna marca NaN elemento a elemento; .sum() cuenta los True.)
+    if validar_totales_no_nulos:
+        columnas_totales_criticas = [
+            "Total de activos (Assets)",
+            "Total pasivos (Liabilities)",
+            "Patrimonio total (Equity)",
+            "Activos corrientes totales (CurrentAssets)",
+            "Pasivos corrientes totales (CurrentLiabilities)",
+            "Efectivo y equivalentes al efectivo (CashAndCashEquivalents)",
+            "Ingresos de actividades ordinarias (Revenue)",
+            "Ganancia (pérdida) (ProfitLoss)",
+            "Ganancia (pérdida) por actividades de operación (GananciaPerdidaPorActividadesDeOperacion)",
+            "Flujos de efectivo netos procedentes de (utilizados en) actividades de operación (CashFlowsFromUsedInOperatingActivities)",
+            "Costos financieros (FinanceCosts)",
+        ]
+        nulos_criticos = {
+            c: int(df[c].isna().sum())
+            for c in columnas_totales_criticas
+            if c in df.columns and int(df[c].isna().sum()) > 0
+        }
+        assert not nulos_criticos, (
+            "ALERTA NO-REGRESION: se detectaron NaN en totales estructurales del panel de "
+            f"entrenamiento/proyeccion: {nulos_criticos}. La imputacion-neutral .fillna(0) "
+            "dejaria de ser inocua y podria mover el PISO en silencio. Revisar la fuente."
+        )
 
     cxp_vencidas = df["Total obligaciones vencidas [miembro] (CxPTotalObligacionesVencidasMiembro)"].fillna(0).clip(lower=0).astype(float)
     cxp_360 = df["Valor obligaciones vencidas de mas de 360 días [miembro] (CxPObligacionesVencidasMasDeTrescientossesentaDiasMiembro)"].fillna(0).clip(lower=0).astype(float)
@@ -304,7 +547,10 @@ def construir_matriz_caracteristicas(df_maestro_t: pd.DataFrame, df_saldos_prev:
     X["Ratio_Deuda_Critica_Sobre_Patrimonio"] = np.where(
         patrimonio > 0, (deuda_critica_exigible / patrimonio).clip(0, 5), np.where(deuda_critica_exigible > 0, 5.0, 0.0)
     )
-    X["Flag_Margen_Bruto_Negativo"] = (df["Ganancia bruta (GrossProfit)"] < 0).astype(int)
+    # Ganancia bruta tambien se blinda con imputacion-neutral (HALLAZGO #2): si falta,
+    # se interpreta como 0 (ni margen positivo ni negativo), de modo que la bandera no
+    # se dispara por un dato ausente. En el panel real no hay NaN aqui, asi que es inocuo.
+    X["Flag_Margen_Bruto_Negativo"] = (df["Ganancia bruta (GrossProfit)"].fillna(0) < 0).astype(int)
 
     # Trampas forenses de alta probabilidad de quiebra
     X["Flag_Trampa_Endeudamiento_Critico"] = ((X["Nivel_Endeudamiento"] >= 0.85) & (utilidad < 0)).astype(int)
@@ -409,6 +655,56 @@ def construir_matriz_caracteristicas(df_maestro_t: pd.DataFrame, df_saldos_prev:
         X[f"{col_rel}_vs_Sector"] = X[col_rel] - media_sectorial
 
     X.index = df_maestro_t.index
+
+    # --------------------------------------------------------------------------
+    # E. TENDENCIAS PLURIANUALES 2020..2024 (FEAT-005, opcional por bandera)
+    # --------------------------------------------------------------------------
+    # Solo se añade el bloque plurianual cuando la bandera maestra está activa y se
+    # provee la serie multi-anual de FEAT-004. Con la bandera en False o sin serie,
+    # X conserva EXACTAMENTE las columnas del PISO (contrato de no-regresión). Las
+    # features plurianuales usan imputación-neutral + flags de cobertura (ver
+    # features_multianio.py), por lo que NO introducen NaN y mantienen operativo a
+    # RandomForest (que no acepta NaN). Anti-fuga: solo años <= anio_t (nunca 2025).
+    if USAR_FEATURES_MULTIANIO and series_multianio is not None:
+        from features_multianio import construir_features_multianio
+        assert anio_t is not None, "Se requiere anio_t para las features plurianuales."
+        saldos_t = {
+            "activos": activos,
+            "pasivos": pasivos,
+            "patrimonio": patrimonio,
+            "ingresos": ingresos,
+            "utilidad": utilidad,
+        }
+        bloque_multianio = construir_features_multianio(
+            df_maestro_t=df_maestro_t,
+            series_multianio=series_multianio,
+            anio_t=anio_t,
+            saldos_t=saldos_t,
+        )
+        # Concatenación por índice (ambos comparten df_maestro_t.index).
+        X = pd.concat([X, bloque_multianio], axis=1)
+
+    # --------------------------------------------------------------------------
+    # F. FEATURES DE ANEXOS NO EXPLOTADOS 520000/801500/801700 (FEAT-002, opcional)
+    # --------------------------------------------------------------------------
+    # Solo se añade el bloque de anexos cuando la bandera maestra está activa y se
+    # provee anio_t (para elegir el corte correcto). Con la bandera en False, X
+    # conserva EXACTAMENTE las columnas del PISO (contrato de no-regresión). Las
+    # features de anexos usan imputación-neutral + flags de cobertura (ver
+    # features_anexos.py), por lo que NO introducen NaN y mantienen operativo a
+    # RandomForest (que no acepta NaN). Anti-fuga: features_anexos lee SOLO el corte
+    # de anio_t (2024 para el modelo 2024->2025; 2025 para la proyección 2026) y
+    # ninguna columna lleva el literal '2025' en su nombre.
+    if USAR_FEATURES_ANEXOS and anio_t is not None:
+        from features_anexos import construir_features_anexos
+        bloque_anexos = construir_features_anexos(
+            df_maestro_t=df_maestro_t,
+            anio_t=anio_t,
+            usar_cache=True,
+        )
+        # Concatenación por índice (ambos comparten df_maestro_t.index).
+        X = pd.concat([X, bloque_anexos], axis=1)
+
     assert X.isnull().sum().sum() == 0, f"Error: nulos detectados en X: {X.columns[X.isnull().any()].tolist()}"
     return X
 
@@ -442,10 +738,31 @@ def construir_panel_y_splits():
     # Extracción de historia 2023
     prev_2023 = obtener_saldos_periodo_anterior(SIIS_DIR / "pymes_individuales-2024", "prev_2023.pkl")
 
+    # Serie de saldos PLURIANUAL 2020..2024 (FEAT-004) solo si la bandera está activa.
+    # Se carga de caché (salidas/series_saldos_multianio.pkl) para no releer los .xlsx.
+    # El corte t del modelo 2024->2025 es el año 2024 (anti-fuga: ventana <= 2024).
+    series_multianio = None
+    if USAR_FEATURES_MULTIANIO:
+        from datos_multianio import construir_series_saldos_multianio
+        series_multianio = construir_series_saldos_multianio(usar_cache=True)
+
     # Construcción de X estrictamente con datos de 2024 e historia 2023 (0 fuga de 2025)
     columnas_2024_puras = [c for c in df_2024_sanas.columns]
-    X = construir_matriz_caracteristicas(panel[columnas_2024_puras], prev_2023)
+    X = construir_matriz_caracteristicas(
+        panel[columnas_2024_puras], prev_2023, series_multianio=series_multianio, anio_t=2024,
+        validar_totales_no_nulos=True,
+    )
     assert not any("2025" in str(col) for col in X.columns), "ALERTA CRÍTICA: Fuga de datos detectada en X."
+
+    # SELECCIÓN POR COLINEALIDAD (FEAT-002): se descartan las columnas redundantes
+    # identificadas por Spearman (|rho|>=0.95). Esto NO altera la construcción de la
+    # matriz ni la definición de y; solo poda columnas colineales de X tras verificar
+    # la ausencia de fuga de 2025. Mejora PR-AUC/F1 en el Test estratificado.
+    if APLICAR_SELECCION_COLINEALIDAD:
+        cols_a_quitar = [c for c in COLUMNAS_COLINEALES_ELIMINADAS if c in X.columns]
+        X = X.drop(columns=cols_a_quitar)
+        # Reafirmación anti-fuga tras la poda: ninguna columna superviviente trae 2025.
+        assert not any("2025" in str(col) for col in X.columns), "ALERTA CRÍTICA: Fuga de datos tras selección."
 
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.20, random_state=RANDOM_STATE, stratify=y
@@ -464,8 +781,10 @@ def entrenar_escuadron_elite(X_train, y_train, X_test, y_test):
     Entrena un escuadrón diverso de 4 modelos con ponderación de clases
     y regularización adaptativa para eventos con desbalanceo 64.58 a 1.
     """
-    modelos = {
-        "LightGBM_Forense": LGBMClassifier(
+    modelos = {}
+    # LightGBM y XGBoost se añaden solo si su librería está disponible (blindaje).
+    if TIENE_LGBM:
+        modelos["LightGBM_Forense"] = LGBMClassifier(
             n_estimators=450,
             learning_rate=0.02,
             num_leaves=15,
@@ -478,8 +797,9 @@ def entrenar_escuadron_elite(X_train, y_train, X_test, y_test):
             random_state=RANDOM_STATE,
             verbose=-1,
             n_jobs=-1
-        ),
-        "XGBoost_Forense": XGBClassifier(
+        )
+    if TIENE_XGB:
+        modelos["XGBoost_Forense"] = XGBClassifier(
             n_estimators=500,
             learning_rate=0.02,
             max_depth=4,
@@ -492,26 +812,26 @@ def entrenar_escuadron_elite(X_train, y_train, X_test, y_test):
             eval_metric="aucpr",
             random_state=RANDOM_STATE,
             n_jobs=-1
-        ),
-        "HistGradientBoosting": HistGradientBoostingClassifier(
-            max_iter=300,
-            learning_rate=0.03,
-            max_depth=4,
-            min_samples_leaf=25,
-            l2_regularization=5.0,
-            class_weight={0: 1, 1: 8},
-            random_state=RANDOM_STATE
-        ),
-        "RandomForest_Forense": RandomForestClassifier(
-            n_estimators=500,
-            max_depth=9,
-            min_samples_leaf=8,
-            max_features="sqrt",
-            class_weight={0: 1, 1: 10},
-            random_state=RANDOM_STATE,
-            n_jobs=-1
         )
-    }
+    # HistGradientBoosting y RandomForest siempre están disponibles (sklearn).
+    modelos["HistGradientBoosting"] = HistGradientBoostingClassifier(
+        max_iter=300,
+        learning_rate=0.03,
+        max_depth=4,
+        min_samples_leaf=25,
+        l2_regularization=5.0,
+        class_weight={0: 1, 1: 8},
+        random_state=RANDOM_STATE
+    )
+    modelos["RandomForest_Forense"] = RandomForestClassifier(
+        n_estimators=500,
+        max_depth=9,
+        min_samples_leaf=8,
+        max_features="sqrt",
+        class_weight={0: 1, 1: 10},
+        random_state=RANDOM_STATE,
+        n_jobs=-1
+    )
 
     predicciones_test = {}
     print("\nEntrenando Escuadrón Élite Forense sobre X_train (15,949 empresas)...")
@@ -523,17 +843,31 @@ def entrenar_escuadron_elite(X_train, y_train, X_test, y_test):
         pr = average_precision_score(y_test, probs)
         print(f"  {nombre:22s} -> ROC-AUC: {roc:.4f} | PR-AUC: {pr:.4f}")
 
-    # Ensamble probabilístico óptimo (30% LGBM + 30% XGB + 20% HGB + 20% RF)
-    score_ensamble = (
-        0.30 * predicciones_test["LightGBM_Forense"] +
-        0.30 * predicciones_test["XGBoost_Forense"] +
-        0.20 * predicciones_test["HistGradientBoosting"] +
-        0.20 * predicciones_test["RandomForest_Forense"]
-    )
+    # Ensamble probabilístico óptimo. Los pesos se calculan dinámicamente sobre los
+    # modelos presentes (referencia 0.30 LGBM + 0.30 XGB + 0.20 HGB + 0.20 RF) y se
+    # renormalizan para sumar 1.0 en caso de que falte LightGBM o XGBoost.
+    pesos = calcular_pesos_ensamble(predicciones_test.keys())
+    assert abs(sum(pesos.values()) - 1.0) < 1e-9, "Los pesos del ensamble no suman 1.0."
+    score_ensamble = sum(peso * predicciones_test[nombre] for nombre, peso in pesos.items())
+
+    # DELEGACION A LA CASCADA (FEAT-003, opcional por bandera). Con USAR_CASCADA en True
+    # el SCORE de Test deja de ser el ensamble plano y pasa a ser el score de la cascada
+    # de 2 etapas (etapa 1 = filtro en-riesgo; etapa 2 = especialista en la cola). NO se
+    # cambia el split ni el semaforo: solo se reemplaza el vector de score que alimenta a
+    # auditar_efectividad_test. Con la bandera en False este bloque no se ejecuta (ni se
+    # importa modelo_cascada), de modo que el PISO se reproduce byte a byte.
+    if USAR_CASCADA:
+        from modelo_cascada import score_cascada_test
+        score_ensamble = score_cascada_test(X_train, y_train, X_test)
+        assert np.all((score_ensamble >= 0.0) & (score_ensamble <= 1.0)), \
+            "El score de cascada (Test) debe estar en [0,1]."
+        print("  [CASCADA] Score de Test reemplazado por el modelo en cascada de 2 etapas.")
 
     roc_ens = roc_auc_score(y_test, score_ensamble)
     pr_ens = average_precision_score(y_test, score_ensamble)
-    print(f"\n---> SUPER-ENSAMBLE FORENSE 4 MODELOS -> ROC-AUC: {roc_ens:.4f} | PR-AUC: {pr_ens:.4f}")
+    detalle_pesos = " + ".join(f"{p:.2f}*{n}" for n, p in pesos.items())
+    print(f"\n---> SUPER-ENSAMBLE FORENSE {len(pesos)} MODELOS ({detalle_pesos})")
+    print(f"     ROC-AUC: {roc_ens:.4f} | PR-AUC: {pr_ens:.4f}")
 
     return modelos, score_ensamble, predicciones_test
 
@@ -636,26 +970,32 @@ def proyectar_semaforo_2026(X_completo, y_completo, df_2025):
     print("RE-ENTRENANDO SUPER-ENSAMBLE EN EL PANEL COMPLETO (19,937 EMPRESAS) PARA PROYECCIÓN 2026")
     print("================================================================================================")
 
-    modelos_finales = {
-        "LightGBM": LGBMClassifier(
+    modelos_finales = {}
+    # LightGBM y XGBoost se incluyen solo si su librería cargó (blindaje opcional).
+    if TIENE_LGBM:
+        modelos_finales["LightGBM"] = LGBMClassifier(
             n_estimators=450, learning_rate=0.02, num_leaves=15, min_child_samples=30,
             subsample=0.8, subsample_freq=1, colsample_bytree=0.6, reg_lambda=5.0,
             scale_pos_weight=7, random_state=RANDOM_STATE, verbose=-1, n_jobs=-1
-        ),
-        "XGBoost": XGBClassifier(
+        )
+    if TIENE_XGB:
+        modelos_finales["XGBoost"] = XGBClassifier(
             n_estimators=500, learning_rate=0.02, max_depth=4, min_child_weight=5,
             subsample=0.8, colsample_bytree=0.6, reg_lambda=5.0, scale_pos_weight=7,
             tree_method="hist", eval_metric="aucpr", random_state=RANDOM_STATE, n_jobs=-1
-        ),
-        "HistGradientBoosting": HistGradientBoostingClassifier(
-            max_iter=300, learning_rate=0.03, max_depth=4, min_samples_leaf=25,
-            l2_regularization=5.0, class_weight={0: 1, 1: 8}, random_state=RANDOM_STATE
-        ),
-        "RandomForest": RandomForestClassifier(
-            n_estimators=500, max_depth=9, min_samples_leaf=8, max_features="sqrt",
-            class_weight={0: 1, 1: 10}, random_state=RANDOM_STATE, n_jobs=-1
         )
-    }
+    modelos_finales["HistGradientBoosting"] = HistGradientBoostingClassifier(
+        max_iter=300, learning_rate=0.03, max_depth=4, min_samples_leaf=25,
+        l2_regularization=5.0, class_weight={0: 1, 1: 8}, random_state=RANDOM_STATE
+    )
+    modelos_finales["RandomForest"] = RandomForestClassifier(
+        n_estimators=500, max_depth=9, min_samples_leaf=8, max_features="sqrt",
+        class_weight={0: 1, 1: 10}, random_state=RANDOM_STATE, n_jobs=-1
+    )
+
+    # Pesos dinámicos del ensamble final (renormalizados a 1.0 sobre los presentes).
+    pesos_finales = calcular_pesos_ensamble(modelos_finales.keys())
+    assert abs(sum(pesos_finales.values()) - 1.0) < 1e-9, "Los pesos finales no suman 1.0."
 
     # Ajuste final de modelos
     for n, m in modelos_finales.items():
@@ -667,12 +1007,25 @@ def proyectar_semaforo_2026(X_completo, y_completo, df_2025):
     for n, m in modelos_finales.items():
         oofs[n] = cross_val_predict(clone(m), X_completo, y_completo, cv=skf, method="predict_proba")[:, 1]
 
-    score_oof_ensamble = (
-        0.30 * oofs["LightGBM"] +
-        0.30 * oofs["XGBoost"] +
-        0.20 * oofs["HistGradientBoosting"] +
-        0.20 * oofs["RandomForest"]
-    )
+    score_oof_ensamble = sum(peso * oofs[nombre] for nombre, peso in pesos_finales.items())
+
+    # DELEGACION A LA CASCADA (FEAT-003, opcional por bandera). Con USAR_CASCADA en True
+    # el score OOF del panel completo que alimenta la CALIBRACION ISOTONICA y los
+    # UMBRALES del semaforo pasa a ser el score OOF de la cascada (una cascada completa
+    # por pliegue, sin fuga). La ruta de calibracion, umbrales y exportacion NO cambia:
+    # solo se sustituye el vector score_oof_ensamble. Con la bandera en False este bloque
+    # no se ejecuta (ni se importa modelo_cascada) y el OOF es el del PISO.
+    cascada_proyeccion = None
+    if USAR_CASCADA:
+        from modelo_cascada import ModeloCascada, score_cascada_oof
+        score_oof_ensamble = score_cascada_oof(X_completo, y_completo)
+        assert np.all((score_oof_ensamble >= 0.0) & (score_oof_ensamble <= 1.0)), \
+            "El score OOF de cascada debe estar en [0,1]."
+        # Cascada ajustada sobre el PANEL COMPLETO para puntuar la poblacion 2025 abajo
+        # (mismo rol que los modelos_finales reentrenados para el ensamble plano).
+        cascada_proyeccion = ModeloCascada()
+        cascada_proyeccion.fit(X_completo, y_completo)
+        print("  [CASCADA] Score OOF del panel reemplazado por el modelo en cascada de 2 etapas.")
 
     roc_final = roc_auc_score(y_completo, score_oof_ensamble)
     pr_final = average_precision_score(y_completo, score_oof_ensamble)
@@ -695,15 +1048,37 @@ def proyectar_semaforo_2026(X_completo, y_completo, df_2025):
     ].copy()
 
     prev_2024 = obtener_saldos_periodo_anterior(SIIS_DIR, "prev_2024.pkl")
-    X_2025 = construir_matriz_caracteristicas(df_2025_sanas, prev_2024)[X_completo.columns]
+
+    # Serie plurianual para la proyección: corte t = 2025, por lo que la ventana de
+    # historia es 2021..2024 (TODO <= 2024; jamás se usa 2025 como insumo, solo como
+    # etiqueta objetivo que NO entra en X). Coherente con el anti-fuga del pipeline.
+    series_multianio_proy = None
+    if USAR_FEATURES_MULTIANIO:
+        from datos_multianio import construir_series_saldos_multianio
+        series_multianio_proy = construir_series_saldos_multianio(usar_cache=True)
+
+    X_2025 = construir_matriz_caracteristicas(
+        df_2025_sanas, prev_2024, series_multianio=series_multianio_proy, anio_t=2025,
+        validar_totales_no_nulos=True,
+    )[X_completo.columns]
     assert X_2025.isnull().sum().sum() == 0, "Nulos detectados en matriz 2025"
 
-    score_2025 = (
-        0.30 * modelos_finales["LightGBM"].predict_proba(X_2025)[:, 1] +
-        0.30 * modelos_finales["XGBoost"].predict_proba(X_2025)[:, 1] +
-        0.20 * modelos_finales["HistGradientBoosting"].predict_proba(X_2025)[:, 1] +
-        0.20 * modelos_finales["RandomForest"].predict_proba(X_2025)[:, 1]
+    score_2025 = sum(
+        peso * modelos_finales[nombre].predict_proba(X_2025)[:, 1]
+        for nombre, peso in pesos_finales.items()
     )
+
+    # DELEGACION A LA CASCADA (FEAT-003, opcional por bandera). Con USAR_CASCADA en True
+    # el score de la poblacion 2025 proviene de la cascada ajustada sobre el panel
+    # completo (coherente con el score OOF que fijo umbrales y calibrador). Asi el
+    # semaforo 2026 usa el MISMO criterio de score en todo el flujo. Con la bandera en
+    # False el score_2025 es el del ensamble plano (PISO reproducido byte a byte).
+    if USAR_CASCADA:
+        assert cascada_proyeccion is not None, "La cascada de proyeccion no fue ajustada."
+        score_2025 = cascada_proyeccion.predict_proba(X_2025)
+        assert np.all((score_2025 >= 0.0) & (score_2025 <= 1.0)), \
+            "El score de cascada (2025) debe estar en [0,1]."
+        print("  [CASCADA] Score de proyeccion 2025 reemplazado por el modelo en cascada.")
 
     probs_calibradas_2026 = calibrador_isotonico.predict(score_2025)
 
@@ -718,8 +1093,13 @@ def proyectar_semaforo_2026(X_completo, y_completo, df_2025):
     df_resultado_2026["Probabilidad_Calibrada_Quiebra_2026"] = probs_calibradas_2026
     df_resultado_2026["Zona_Semaforo_2026"] = zonas_2026
 
-    # Señales detonantes principales por empresa
-    importancias = modelos_finales["XGBoost"].feature_importances_
+    # Señales detonantes principales por empresa. Se prefiere XGBoost por su
+    # feature_importances_ basado en ganancia; si no está disponible se usa el
+    # primer modelo presente que exponga importancias (RandomForest / HGB).
+    modelo_importancias = modelos_finales.get("XGBoost") or modelos_finales.get(
+        "LightGBM"
+    ) or modelos_finales["RandomForest"]
+    importancias = modelo_importancias.feature_importances_
     cols_top = pd.Series(importancias, index=X_completo.columns).nlargest(10).index
     anomalias = (X_2025[cols_top].rank(pct=True) - 0.5).abs()
     df_resultado_2026["Detonantes_Criticos"] = anomalias.apply(
@@ -740,8 +1120,12 @@ def proyectar_semaforo_2026(X_completo, y_completo, df_2025):
     print("================================================================================================")
     print(resumen_2026.round(4).to_string())
 
-    # Exportar modelo y metadatos
-    joblib.dump({
+    # Exportar modelo y metadatos. Con USAR_CASCADA activo se adjunta ademas la cascada
+    # ajustada sobre el panel completo (clave "cascada") y se marca "usar_cascada": True,
+    # de modo que el artefacto sea AUTOCONSISTENTE con el score que fijo umbrales y
+    # calibrador. Con la bandera en False el diccionario exportado es EXACTAMENTE el del
+    # PISO (sin claves nuevas), preservando la reproducibilidad byte a byte del artefacto.
+    artefacto = {
         "modelos": modelos_finales,
         "features": list(X_completo.columns),
         "calibrador": calibrador_isotonico,
@@ -750,7 +1134,11 @@ def proyectar_semaforo_2026(X_completo, y_completo, df_2025):
             "naranja": umbral_naranja_2026,
             "amarillo": umbral_amarillo_2026
         }
-    }, SALIDAS_DIR / "modelo_final_2026.joblib")
+    }
+    if USAR_CASCADA:
+        artefacto["usar_cascada"] = True
+        artefacto["cascada"] = cascada_proyeccion
+    joblib.dump(artefacto, SALIDAS_DIR / "modelo_final_2026.joblib")
 
     return resumen_2026, df_resultado_2026
 

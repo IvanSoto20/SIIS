@@ -1,0 +1,59 @@
+{
+  "anios_cubiertos": [
+    2020,
+    2021,
+    2022,
+    2023,
+    2024
+  ],
+  "nits_por_anio": {
+    "2020": 23175,
+    "2021": 26674,
+    "2022": 26421,
+    "2023": 25145,
+    "2024": 22806
+  },
+  "solapamientos_multianio": {
+    "2021_inter_2022": 24927,
+    "2022_inter_2023": 24793,
+    "2021_inter_2023": 23310,
+    "triple_2021_2022_2023": 23299
+  },
+  "discrepancia_entre_fuentes": {
+    "2021": {
+      "nits_comunes": 21258,
+      "nits_discrepantes": 741,
+      "pct_discrepancia": 0.034857,
+      "fuente_actual": "pymes_individuales-2021/periodo actual",
+      "fuente_anterior": "pymes_individuales-2022/periodo anterior",
+      "nits_fuente_actual": 23175,
+      "nits_fuente_anterior": 24757
+    },
+    "2022": {
+      "nits_comunes": 23096,
+      "nits_discrepantes": 761,
+      "pct_discrepancia": 0.032949,
+      "fuente_actual": "pymes_individuales-2022/periodo actual",
+      "fuente_anterior": "pymes_individuales-2023/periodo anterior",
+      "nits_fuente_actual": 24757,
+      "nits_fuente_anterior": 24760
+    },
+    "2023": {
+      "nits_comunes": 22421,
+      "nits_discrepantes": 911,
+      "pct_discrepancia": 0.040632,
+      "fuente_actual": "pymes_individuales-2023/periodo actual",
+      "fuente_anterior": "pymes_individuales-2024/periodo anterior",
+      "nits_fuente_actual": 24760,
+      "nits_fuente_anterior": 22806
+    }
+  },
+  "umbral_discrepancia_activos": 0.01,
+  "decision_fuente": "Ante discrepancia entre fuentes que observan el mismo ano, se PREFIERE la fuente 'periodo actual' de la carpeta del propio ano por ser el reporte primario; la fuente 'periodo anterior' de la carpeta siguiente solo aporta NITs ausentes (complemento) y sirve de control cruzado.",
+  "conteos_verificados_periodo_anterior": {
+    "2020": 23175,
+    "2021": 24757,
+    "2022": 24760
+  },
+  "tolerancia_conteo": 0.05
+}

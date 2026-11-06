@@ -1,0 +1,24 @@
+# ==============================================================================
+# DEPENDENCIAS DE LA FASE 5 (PREDICCIÓN DE INSOLVENCIA SIIS COLOMBIA)
+# ==============================================================================
+# Entorno: Python 3.11.15. Versiones fijadas (pin) para reproducibilidad exacta
+# de las métricas de la línea base. Instalar con:
+#   python3 -m pip install -r requirements.txt
+#
+# Núcleo científico (obligatorio para que corra el pipeline):
+pandas==3.1.1          # Manipulación de DataFrames y lectura de los anexos SIIS.
+numpy==2.4.6           # Álgebra vectorizada y acotamiento numérico (.clip, nan_to_num).
+scipy==1.17.1          # scipy.stats.rankdata (normalización de rangos/percentiles).
+scikit-learn==1.9.1    # HistGradientBoosting, RandomForest, calibración isotónica, métricas.
+joblib==1.6.0          # Serialización del modelo final (modelo_final_2026.joblib).
+
+# Motor de lectura de hojas de cálculo (OBLIGATORIO):
+openpyxl==3.1.5        # Backend que usa pandas.read_excel para abrir los archivos .xlsx del SIIS.
+                       # Sin openpyxl, pd.read_excel lanza ImportError y el pipeline no arranca.
+
+# Boosters de gradiente OPCIONALES (el script los blinda con try/except):
+# Si alguno no puede instalarse, el "escuadrón élite" degrada con gracia usando
+# solo HistGradientBoosting y RandomForest de scikit-learn, renormalizando los
+# pesos del ensamble para que sigan sumando 1.0 (banderas TIENE_LGBM / TIENE_XGB).
+lightgbm==4.7.0        # Gradient Boosting de alto rendimiento (requiere libgomp en el SO).
+xgboost==3.2.0         # Extreme Gradient Boosting (tree_method="hist").

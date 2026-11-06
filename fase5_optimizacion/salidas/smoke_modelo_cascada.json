@@ -1,0 +1,151 @@
+{
+  "descripcion": "Smoke test del modelo en cascada de 2 etapas (FEAT-003). Mide ROC/PR OOF y Test y cortes top1%/top2.5%, y confirma score en [0,1].",
+  "percentil_cola": 88.0,
+  "usar_features_anexos": false,
+  "diagnostico_cola": {
+    "u_cola": 0.079124,
+    "filas_cola_train": 1914,
+    "pct_cola_train": 0.12,
+    "positivos_en_cola": 171,
+    "recall_etapa1_sobre_positivos": 0.7037,
+    "scale_pos_weight_etapa2": 10.193
+  },
+  "test": {
+    "n": 3988,
+    "positivos": 61,
+    "roc_auc": 0.88,
+    "pr_auc": 0.3048,
+    "cortes": {
+      "0.5": {
+        "alertas": 20,
+        "tp": 13,
+        "precision_pct": 65.0,
+        "recall_pct": 21.31,
+        "lift": 42.5
+      },
+      "0.7": {
+        "alertas": 28,
+        "tp": 14,
+        "precision_pct": 50.0,
+        "recall_pct": 22.95,
+        "lift": 32.69
+      },
+      "1.0": {
+        "alertas": 40,
+        "tp": 17,
+        "precision_pct": 42.5,
+        "recall_pct": 27.87,
+        "lift": 27.79
+      },
+      "1.2": {
+        "alertas": 48,
+        "tp": 22,
+        "precision_pct": 45.83,
+        "recall_pct": 36.07,
+        "lift": 29.96
+      },
+      "2.5": {
+        "alertas": 100,
+        "tp": 27,
+        "precision_pct": 27.0,
+        "recall_pct": 44.26,
+        "lift": 17.65
+      },
+      "5.0": {
+        "alertas": 200,
+        "tp": 33,
+        "precision_pct": 16.5,
+        "recall_pct": 54.1,
+        "lift": 10.79
+      },
+      "10.0": {
+        "alertas": 399,
+        "tp": 39,
+        "precision_pct": 9.77,
+        "recall_pct": 63.93,
+        "lift": 6.39
+      }
+    },
+    "f1_max": {
+      "f1": 0.4107,
+      "precision_pct": 45.1,
+      "recall_pct": 37.7,
+      "umbral": 0.5521,
+      "alertas": 51
+    }
+  },
+  "oof": {
+    "n": 19937,
+    "positivos": 304,
+    "roc_auc": 0.8862,
+    "pr_auc": 0.2527,
+    "cortes": {
+      "0.5": {
+        "alertas": 100,
+        "tp": 50,
+        "precision_pct": 50.0,
+        "recall_pct": 16.45,
+        "lift": 32.79
+      },
+      "0.7": {
+        "alertas": 140,
+        "tp": 65,
+        "precision_pct": 46.43,
+        "recall_pct": 21.38,
+        "lift": 30.45
+      },
+      "1.0": {
+        "alertas": 200,
+        "tp": 84,
+        "precision_pct": 42.0,
+        "recall_pct": 27.63,
+        "lift": 27.54
+      },
+      "1.2": {
+        "alertas": 240,
+        "tp": 92,
+        "precision_pct": 38.33,
+        "recall_pct": 30.26,
+        "lift": 25.14
+      },
+      "2.5": {
+        "alertas": 499,
+        "tp": 123,
+        "precision_pct": 24.65,
+        "recall_pct": 40.46,
+        "lift": 16.17
+      },
+      "5.0": {
+        "alertas": 997,
+        "tp": 161,
+        "precision_pct": 16.15,
+        "recall_pct": 52.96,
+        "lift": 10.59
+      },
+      "10.0": {
+        "alertas": 1994,
+        "tp": 207,
+        "precision_pct": 10.38,
+        "recall_pct": 68.09,
+        "lift": 6.81
+      }
+    },
+    "f1_max": {
+      "f1": 0.3515,
+      "precision_pct": 37.74,
+      "recall_pct": 32.89,
+      "umbral": 0.4763,
+      "alertas": 265
+    }
+  },
+  "score_panel_rango": {
+    "min": 0.000281,
+    "max": 0.962317
+  },
+  "entrada_parcial": {
+    "cuentas_detalle_vaciadas": 5,
+    "score_cascada": 0.259777,
+    "en_rango_0_1": true
+  },
+  "segundos_totales": 429.2
+}

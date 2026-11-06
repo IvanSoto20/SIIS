@@ -1,0 +1,66 @@
+{
+  "piso_test_referencia": {
+    "roc_auc": 0.8782,
+    "pr_auc": 0.3115,
+    "f1_optimo": 0.4144
+  },
+  "tolerancia_no_regresion": 0.005,
+  "columnas_plurianuales_anadidas": [
+    "Anios_Historia_Disponible",
+    "Flag_Sin_Historia_3A",
+    "Flag_Historia_Parcial",
+    "Pendiente_Patrimonio_3A_Sobre_Activos",
+    "Var_Patrimonio_2A_Sobre_Activos",
+    "CAGR_Ingresos_Multianio",
+    "Aceleracion_Endeudamiento",
+    "Anios_Con_Perdida_Ventana",
+    "Persistencia_Perdidas_3A",
+    "Flag_Deterioro_Patrimonial_Sostenido",
+    "Flag_Paralisis_Sostenida_Multianio"
+  ],
+  "n_columnas_sin": 90,
+  "n_columnas_con": 101,
+  "test_sin_multianio": {
+    "roc_auc": 0.8782,
+    "pr_auc": 0.3115,
+    "f1_optimo": 0.4144,
+    "umbral_f1_optimo": 0.5199,
+    "precision_en_f1": 0.46,
+    "recall_en_f1": 0.377
+  },
+  "test_con_multianio": {
+    "roc_auc": 0.8877,
+    "pr_auc": 0.3,
+    "f1_optimo": 0.4,
+    "umbral_f1_optimo": 0.5004,
+    "precision_en_f1": 0.4068,
+    "recall_en_f1": 0.3934
+  },
+  "delta_test_con_menos_sin": {
+    "roc_auc": 0.0095,
+    "pr_auc": -0.0115,
+    "f1_optimo": -0.0144
+  },
+  "oof_sin_multianio": {
+    "roc_auc": 0.8867,
+    "pr_auc": 0.2534
+  },
+  "oof_con_multianio": {
+    "roc_auc": 0.888,
+    "pr_auc": 0.2592
+  },
+  "delta_oof_con_menos_sin": {
+    "roc_auc": 0.0013,
+    "pr_auc": 0.0058
+  },
+  "decision_adopcion": {
+    "criterio": "adoptar DEFAULT (True) solo si PR-AUC_test >= 0.3065 y F1_test >= 0.4094 (PISO +/- 0.005)",
+    "pr_auc_test_con": 0.3,
+    "f1_test_con": 0.4,
+    "no_regresa_piso": false,
+    "mejora_piso": false,
+    "usar_features_multianio_recomendado": false
+  },
+  "estrategia_faltantes": "Imputacion-neutral + flags de cobertura (Anios_Historia_Disponible, Flag_Sin_Historia_3A, Flag_Historia_Parcial). Conserva el assert de cero-NaN en X y mantiene operativo a RandomForest (que no acepta NaN). Las pendientes/variaciones/CAGR/aceleraciones toman 0.0 (variacion nula) cuando falta el saldo historico; los conteos de perdida cuentan solo los anios realmente observados. El requisito de entrada parcial se cumple via las banderas de cobertura.",
+  "anti_fuga": "Ventana plurianual restringida a anios <= anio_t (2024 para el modelo 2024->2025, 2025 como anio_t solo en la proyeccion pero usando historia <=2024). Ninguna columna de X contiene '2025'. y se deriva de columnas *_2025 que NO entran en X. validar_sin_fuga_multianio asevera anio <= anio_t."
+}

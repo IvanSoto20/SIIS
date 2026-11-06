@@ -1,0 +1,248 @@
+{
+  "proposito": "PALANCA 1 (FEAT-002): leer a fondo los anexos 520000/801500/801700 del SIIS (no explotados) para los cortes 2024 y 2025, derivar variables de calidad de caja, deterioro y provisiones con imputacion-neutral + flags de cobertura, y exponerlas como candidatas a X detras de la bandera USAR_FEATURES_ANEXOS (default False en esta feature).",
+  "columnas_derivadas": [
+    "Flag_Reporta_Flujos",
+    "Calidad_Ganancias_Caja",
+    "Flag_Flujo_Operativo_Negativo",
+    "Cobertura_Deuda_Con_Caja",
+    "Cobertura_Intereses_Con_Caja",
+    "Quema_Caja_Pct",
+    "Flag_Quema_Caja",
+    "Carga_Servicio_Deuda",
+    "Peso_Depreciacion_En_Conciliacion",
+    "Peso_Deterioro_En_Conciliacion",
+    "Flag_Reporta_Deterioro",
+    "Deterioro_Sobre_Activos",
+    "Flag_Deterioro_Material",
+    "Flag_Reporta_Provisiones",
+    "Provisiones_Sobre_Patrimonio",
+    "Flag_Provision_Litigios_Material"
+  ],
+  "anti_fuga": "El modelo 2024->2025 usa SOLO el corte 2024; la proyeccion 2026 usa el corte 2025. Ninguna columna lleva el literal '2025' en su nombre.",
+  "cortes": {
+    "2024": {
+      "n_empresas": 22804,
+      "cobertura": {
+        "reporta_flujos_520000": 22456,
+        "reporta_deterioro_801500": 1172,
+        "reporta_provisiones_801700": 1036,
+        "pct_reporta_flujos": 98.474,
+        "pct_reporta_deterioro": 5.1394,
+        "pct_reporta_provisiones": 4.5431
+      },
+      "estadisticos": {
+        "Flag_Reporta_Flujos": {
+          "tipo": "flag",
+          "pct_activos": 98.474,
+          "n_activos": 22456
+        },
+        "Calidad_Ganancias_Caja": {
+          "tipo": "ratio",
+          "media": 0.604393,
+          "mediana": 0.160475,
+          "min": -5.0,
+          "max": 5.0
+        },
+        "Flag_Flujo_Operativo_Negativo": {
+          "tipo": "flag",
+          "pct_activos": 34.2703,
+          "n_activos": 7815
+        },
+        "Cobertura_Deuda_Con_Caja": {
+          "tipo": "ratio",
+          "media": 0.606248,
+          "mediana": 0.086156,
+          "min": 0.0,
+          "max": 5.0
+        },
+        "Cobertura_Intereses_Con_Caja": {
+          "tipo": "ratio",
+          "media": 2.354756,
+          "mediana": 0.0,
+          "min": 0.0,
+          "max": 10.0
+        },
+        "Quema_Caja_Pct": {
+          "tipo": "ratio",
+          "media": 0.604663,
+          "mediana": 0.024042,
+          "min": -1.0,
+          "max": 5.0
+        },
+        "Flag_Quema_Caja": {
+          "tipo": "flag",
+          "pct_activos": 45.3342,
+          "n_activos": 10338
+        },
+        "Carga_Servicio_Deuda": {
+          "tipo": "ratio",
+          "media": 0.043243,
+          "mediana": 0.0,
+          "min": 0.0,
+          "max": 5.0
+        },
+        "Peso_Depreciacion_En_Conciliacion": {
+          "tipo": "ratio",
+          "media": 0.012771,
+          "mediana": 0.003586,
+          "min": 0.0,
+          "max": 1.0
+        },
+        "Peso_Deterioro_En_Conciliacion": {
+          "tipo": "ratio",
+          "media": 0.00088,
+          "mediana": 0.0,
+          "min": 0.0,
+          "max": 1.0
+        },
+        "Flag_Reporta_Deterioro": {
+          "tipo": "flag",
+          "pct_activos": 5.1394,
+          "n_activos": 1172
+        },
+        "Deterioro_Sobre_Activos": {
+          "tipo": "ratio",
+          "media": 0.000839,
+          "mediana": 0.0,
+          "min": 0.0,
+          "max": 1.0
+        },
+        "Flag_Deterioro_Material": {
+          "tipo": "flag",
+          "pct_activos": 4.2887,
+          "n_activos": 978
+        },
+        "Flag_Reporta_Provisiones": {
+          "tipo": "flag",
+          "pct_activos": 4.5431,
+          "n_activos": 1036
+        },
+        "Provisiones_Sobre_Patrimonio": {
+          "tipo": "ratio",
+          "media": 0.008356,
+          "mediana": 0.0,
+          "min": 0.0,
+          "max": 5.0
+        },
+        "Flag_Provision_Litigios_Material": {
+          "tipo": "flag",
+          "pct_activos": 0.5876,
+          "n_activos": 134
+        }
+      },
+      "sin_nan": true
+    },
+    "2025": {
+      "n_empresas": 23005,
+      "cobertura": {
+        "reporta_flujos_520000": 22605,
+        "reporta_deterioro_801500": 1148,
+        "reporta_provisiones_801700": 1064,
+        "pct_reporta_flujos": 98.2612,
+        "pct_reporta_deterioro": 4.9902,
+        "pct_reporta_provisiones": 4.6251
+      },
+      "estadisticos": {
+        "Flag_Reporta_Flujos": {
+          "tipo": "flag",
+          "pct_activos": 98.2612,
+          "n_activos": 22605
+        },
+        "Calidad_Ganancias_Caja": {
+          "tipo": "ratio",
+          "media": 0.554685,
+          "mediana": 0.101527,
+          "min": -5.0,
+          "max": 5.0
+        },
+        "Flag_Flujo_Operativo_Negativo": {
+          "tipo": "flag",
+          "pct_activos": 35.2315,
+          "n_activos": 8105
+        },
+        "Cobertura_Deuda_Con_Caja": {
+          "tipo": "ratio",
+          "media": 0.576985,
+          "mediana": 0.073269,
+          "min": 0.0,
+          "max": 5.0
+        },
+        "Cobertura_Intereses_Con_Caja": {
+          "tipo": "ratio",
+          "media": 2.223427,
+          "mediana": 0.0,
+          "min": 0.0,
+          "max": 10.0
+        },
+        "Quema_Caja_Pct": {
+          "tipo": "ratio",
+          "media": 0.555244,
+          "mediana": 0.0,
+          "min": -1.0,
+          "max": 5.0
+        },
+        "Flag_Quema_Caja": {
+          "tipo": "flag",
+          "pct_activos": 46.6725,
+          "n_activos": 10737
+        },
+        "Carga_Servicio_Deuda": {
+          "tipo": "ratio",
+          "media": 0.048494,
+          "mediana": 0.0,
+          "min": 0.0,
+          "max": 5.0
+        },
+        "Peso_Depreciacion_En_Conciliacion": {
+          "tipo": "ratio",
+          "media": 0.012793,
+          "mediana": 0.003646,
+          "min": 0.0,
+          "max": 1.0
+        },
+        "Peso_Deterioro_En_Conciliacion": {
+          "tipo": "ratio",
+          "media": 0.000877,
+          "mediana": 0.0,
+          "min": 0.0,
+          "max": 1.0
+        },
+        "Flag_Reporta_Deterioro": {
+          "tipo": "flag",
+          "pct_activos": 4.9902,
+          "n_activos": 1148
+        },
+        "Deterioro_Sobre_Activos": {
+          "tipo": "ratio",
+          "media": 0.00084,
+          "mediana": 0.0,
+          "min": 0.0,
+          "max": 1.0
+        },
+        "Flag_Deterioro_Material": {
+          "tipo": "flag",
+          "pct_activos": 4.0296,
+          "n_activos": 927
+        },
+        "Flag_Reporta_Provisiones": {
+          "tipo": "flag",
+          "pct_activos": 4.6251,
+          "n_activos": 1064
+        },
+        "Provisiones_Sobre_Patrimonio": {
+          "tipo": "ratio",
+          "media": 0.008354,
+          "mediana": 0.0,
+          "min": 0.0,
+          "max": 5.0
+        },
+        "Flag_Provision_Litigios_Material": {
+          "tipo": "flag",
+          "pct_activos": 0.6086,
+          "n_activos": 140
+        }
+      },
+      "sin_nan": true
+    }
+  }
+}
