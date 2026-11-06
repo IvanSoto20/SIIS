@@ -1,0 +1,79 @@
+{
+  "descripcion": "Dimensionamiento de positivos y_estricto por transicion historica. La columna positivos_legales_t_mas_1 usa SOLO la parte LEGAL de la etiqueta (cambio de estado a no-sano en t+1), observable desde las caratulas 10000; es una cota conservadora. La parte patrimonial (Flag_Quiebra_Patrimonial de t+1) la completa FEAT-002 al cruzar con el maestro reconstruido de t+1.",
+  "estados_sanos": [
+    "activa",
+    "en etapa preoperativa"
+  ],
+  "nits_por_maestro": {
+    "2021": 23175,
+    "2022": 24757,
+    "2023": 24760
+  },
+  "shape_por_maestro": {
+    "2021": [
+      23175,
+      94
+    ],
+    "2022": [
+      24757,
+      94
+    ],
+    "2023": [
+      24760,
+      94
+    ]
+  },
+  "estados_por_anio": {
+    "2021": {
+      "activa": 22071,
+      "acuerdo de reorganizacion": 869,
+      "acuerdo de reestructuracion": 182,
+      "en etapa preoperativa": 40,
+      "concordato en ejecucion": 10,
+      "concordato en tramite": 3
+    },
+    "2022": {
+      "activa": 23635,
+      "acuerdo de reorganizacion": 916,
+      "acuerdo de reestructuracion": 163,
+      "en etapa preoperativa": 37,
+      "concordato en ejecucion": 4,
+      "concordato en tramite": 2
+    },
+    "2023": {
+      "activa": 23566,
+      "acuerdo de reorganizacion": 969,
+      "acuerdo de reestructuracion": 182,
+      "en etapa preoperativa": 34,
+      "concordato en ejecucion": 8,
+      "concordato en tramite": 1
+    },
+    "2024": {
+      "activa": 21612,
+      "acuerdo de reorganizacion": 1002,
+      "acuerdo de reestructuracion": 162,
+      "en etapa preoperativa": 26,
+      "concordato en ejecucion": 4
+    }
+  },
+  "transiciones": {
+    "2021_a_2022": {
+      "empresas_sanas_t": 21393,
+      "sanas_con_estado_t_mas_1": 19828,
+      "positivos_legales_t_mas_1": 149
+    },
+    "2022_a_2023": {
+      "empresas_sanas_t": 22819,
+      "sanas_con_estado_t_mas_1": 21523,
+      "positivos_legales_t_mas_1": 135
+    },
+    "2023_a_2024": {
+      "empresas_sanas_t": 22855,
+      "sanas_con_estado_t_mas_1": 20911,
+      "positivos_legales_t_mas_1": 141
+    }
+  },
+  "total_positivos_legales_extra": 425,
+  "positivos_panel_actual_2024_2025": 304,
+  "factor_aumento_estimado_vs_panel_actual": 2.398
+}
