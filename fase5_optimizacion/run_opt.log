@@ -1,0 +1,69 @@
+﻿Extrayendo Periodo Anterior 2023 (archivos 2024) y 2024 (archivos 2025)...
+  prev_2023: (22806, 11) | prev_2024: (23005, 11)
+Panel: (19937, 95) | positivos: 304 (1.5248%) | con historia 2023: 99.99%
+
+[ABLACI├ôN] 20 variables de tendencia t-1->t
+  Sin tendencias     (75 vars) CV-OOF {'roc': 0.8641, 'pr': 0.2522} | TEST {'roc': 0.8618, 'pr': 0.3153}
+  Tendencias nucleo  (80 vars) CV-OOF {'roc': 0.8701, 'pr': 0.2539} | TEST {'roc': 0.8537, 'pr': 0.3124}
+  Con tendencias     (95 vars) CV-OOF {'roc': 0.8634, 'pr': 0.2365} | TEST {'roc': 0.8413, 'pr': 0.2777}
+  -> Conjunto elegido por CV: Tendencias nucleo
+
+[COLINEALIDAD] 80 -> 71 variables. Eliminadas: ['Nivel_Endeudamiento', 'Flag_Inyeccion_Capital_Socios', 'Flag_Cartera_Perdida_360d', 'Flag_Cobro_Juridico_Proveedores', 'ROA_Neto', 'Colchon_Patrimonio_Sobre_Pasivos', 'Flag_NIIF_Plenas', 'Tasa_Consumo_Patrimonio_vs_Sector', 'Altman_Z_Emergente_vs_Sector']
+
+[MODELOS] OOF 5-fold en train + evaluaci├│n en test
+  LGBM_a    CV-OOF {'roc': 0.8691, 'pr': 0.2428} | TEST {'roc': 0.8579, 'pr': 0.317}
+  LGBM_b    CV-OOF {'roc': 0.8718, 'pr': 0.24} | TEST {'roc': 0.8603, 'pr': 0.2817}
+  LGBM_c    CV-OOF {'roc': 0.8716, 'pr': 0.2409} | TEST {'roc': 0.8571, 'pr': 0.3008}
+  XGB_a     CV-OOF {'roc': 0.8696, 'pr': 0.2442} | TEST {'roc': 0.8566, 'pr': 0.2822}
+  XGB_b     CV-OOF {'roc': 0.8695, 'pr': 0.2383} | TEST {'roc': 0.8701, 'pr': 0.2897}
+  HGB_1_8   CV-OOF {'roc': 0.8511, 'pr': 0.2058} | TEST {'roc': 0.8548, 'pr': 0.2589}
+  RF_1_10   CV-OOF {'roc': 0.8619, 'pr': 0.2247} | TEST {'roc': 0.8705, 'pr': 0.2769}
+  ENSAMBLE ['XGB_a', 'LGBM_a', 'LGBM_c'] CV-OOF {'roc': 0.8722, 'pr': 0.2451}
+
+[ENSAMBLE FINAL] TEST {'roc': 0.8589, 'pr': 0.3002} | Brier cal: 0.01254
+
+[PUNTOS DE OPERACI├ôN EN TEST]  (umbrales fijados en OOF de train -> evaluaci├│n honesta)
+  Rojo (max-F1 en OOF)                     {'umbral': 0.335, 'alertas': 88, 'TP': 24, 'precision': 0.2727, 'recall': 0.3934, 'f1': 0.3221, 'lift': 17.83}
+  Amarillo+Rojo (P90 OOF)                  {'umbral': 0.0682, 'alertas': 484, 'TP': 41, 'precision': 0.0847, 'recall': 0.6721, 'f1': 0.1505, 'lift': 5.54}
+  Referencia optimista (max-F1 en test)    {'umbral': 0.5943, 'alertas': 43, 'TP': 20, 'precision': 0.4651, 'recall': 0.3279, 'f1': 0.3846, 'lift': 30.41}
+
+[SEM├üFORO EN TEST 2024->2025]
+            empresas  quiebras    tasa  pct_quiebras     lift
+zona                                                         
+1_VERDE         3504        20  0.0057        0.3279   0.3732
+2_AMARILLO       396        17  0.0429        0.2787   2.8066
+3_ROJO            88        24  0.2727        0.3934  17.8301
+
+[FINAL] Re-entrenando en las 19,937 empresas y recalibrando umbrales con OOF completo...
+  OOF panel completo {'roc': 0.8763, 'pr': 0.2564} | U_ROJO=0.4992 U_AMAR=0.0835
+
+[SEM├üFORO 2026] Poblaci├│n sana 2025: 21113 empresas | con historia 2024: 100.00%
+                    empresas  prob_media  quiebras_esperadas
+Zona_Semaforo_2026                                          
+1_VERDE                18765      0.0064            119.3034
+2_AMARILLO              2060      0.0643            132.3601
+3_ROJO                   288      0.4055            116.7899
+
+[TOP 20 IMPORTANCIAS - XGB_a]
+Tasa_Consumo_Patrimonio                    0.096374
+Ratio_Patrimonio_Inercial_Sobre_Activos    0.073557
+ROE                                        0.064752
+Flag_Colapso_Patrimonial_Inercial          0.034057
+Flag_Default_Sin_Efectivo                  0.024906
+Perdidas_Acumuladas_2A_Sobre_Activos       0.023162
+Ratio_Deuda_Vencida_Mas_360d               0.021667
+Log_Patrimonio                             0.020747
+Var_Pct_Patrimonio                         0.019752
+Nivel_Endeudamiento_vs_Sector              0.018318
+Altman_Z_Emergente                         0.017713
+Ratio_Caja_Inmediata                       0.015526
+Ratio_Financiacion_DIAN                    0.014884
+Ratio_Morosidad_Severa                     0.014278
+Proporcion_ORI_Sobre_Activos               0.014278
+Concentracion_Deuda_Corto_Plazo            0.013819
+Tasa_Sangria_EBIT_Patrimonio               0.013810
+ROA_Neto_vs_Sector                         0.013776
+Flag_Distribucion_Utilidades               0.013520
+Impacto_Intereses_Sobre_Patrimonio         0.013352
+
+OK -> salidas/semaforo_2026.csv, modelo_final_2026.joblib, reporte_fase5.json

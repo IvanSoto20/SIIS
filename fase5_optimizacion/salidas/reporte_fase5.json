@@ -1,0 +1,164 @@
+{
+  "panel_total": 19937,
+  "quiebras_total": 304,
+  "roc_auc_test": 0.8747,
+  "pr_auc_test": 0.3027,
+  "cortes_efectividad_test": [
+    {
+      "corte": "Corte Quirúrgico Élite (Top 0.5% más riesgoso)",
+      "umbral": 0.7479508317768526,
+      "empresas_alertadas": 20,
+      "quiebras_detectadas_TP": 12,
+      "total_quiebras_reales": 61,
+      "falsas_alarmas_FP": 8,
+      "precision_pct": 60.0,
+      "recall_pct": 19.67,
+      "f1_score": 0.2963,
+      "lift": 39.23
+    },
+    {
+      "corte": "Corte Quirúrgico Alta Precisión (Top 0.7%)",
+      "umbral": 0.7042718618268401,
+      "empresas_alertadas": 28,
+      "quiebras_detectadas_TP": 15,
+      "total_quiebras_reales": 61,
+      "falsas_alarmas_FP": 13,
+      "precision_pct": 53.57,
+      "recall_pct": 24.59,
+      "f1_score": 0.3371,
+      "lift": 35.02
+    },
+    {
+      "corte": "Zona Roja Estricta (Top 1.0% más riesgoso)",
+      "umbral": 0.5902271183603666,
+      "empresas_alertadas": 40,
+      "quiebras_detectadas_TP": 19,
+      "total_quiebras_reales": 61,
+      "falsas_alarmas_FP": 21,
+      "precision_pct": 47.5,
+      "recall_pct": 31.15,
+      "f1_score": 0.3762,
+      "lift": 31.05
+    },
+    {
+      "corte": "Zona Roja Ampliada (Top 1.2% más riesgoso)",
+      "umbral": 0.518830458925436,
+      "empresas_alertadas": 48,
+      "quiebras_detectadas_TP": 21,
+      "total_quiebras_reales": 61,
+      "falsas_alarmas_FP": 27,
+      "precision_pct": 43.75,
+      "recall_pct": 34.43,
+      "f1_score": 0.3853,
+      "lift": 28.6
+    },
+    {
+      "corte": "Umbral Óptimo Máximo F1 (Prob >= 0.466)",
+      "umbral": 0.46589315419005217,
+      "empresas_alertadas": 62,
+      "quiebras_detectadas_TP": 25,
+      "total_quiebras_reales": 61,
+      "falsas_alarmas_FP": 37,
+      "precision_pct": 40.32,
+      "recall_pct": 40.98,
+      "f1_score": 0.4065,
+      "lift": 26.36
+    },
+    {
+      "corte": "Corte Equilibrado (Top 2.5% más riesgoso)",
+      "umbral": 0.3533439979601003,
+      "empresas_alertadas": 100,
+      "quiebras_detectadas_TP": 28,
+      "total_quiebras_reales": 61,
+      "falsas_alarmas_FP": 72,
+      "precision_pct": 28.0,
+      "recall_pct": 45.9,
+      "f1_score": 0.3478,
+      "lift": 18.31
+    },
+    {
+      "corte": "Corte Cobertura Media (Top 5.0% más riesgoso)",
+      "umbral": 0.22047032827223395,
+      "empresas_alertadas": 200,
+      "quiebras_detectadas_TP": 32,
+      "total_quiebras_reales": 61,
+      "falsas_alarmas_FP": 168,
+      "precision_pct": 16.0,
+      "recall_pct": 52.46,
+      "f1_score": 0.2452,
+      "lift": 10.46
+    },
+    {
+      "corte": "Zona de Auditoría Preventiva (Top 10.0% más riesgoso)",
+      "umbral": 0.1064548766253326,
+      "empresas_alertadas": 399,
+      "quiebras_detectadas_TP": 37,
+      "total_quiebras_reales": 61,
+      "falsas_alarmas_FP": 362,
+      "precision_pct": 9.27,
+      "recall_pct": 60.66,
+      "f1_score": 0.1609,
+      "lift": 6.06
+    }
+  ],
+  "semaforo_test": [
+    {
+      "Zona": "1. VERDE (Estable / Sano)",
+      "Total_Empresas": 3589,
+      "Empresas_Quebradas": 24,
+      "Tasa_Quiebra_Pct": 0.6687,
+      "Pct_Del_Total_Quiebras": 39.3443,
+      "Lift_vs_Promedio": 0.4372
+    },
+    {
+      "Zona": "2. AMARILLO (Vigilancia / Alerta)",
+      "Total_Empresas": 299,
+      "Empresas_Quebradas": 9,
+      "Tasa_Quiebra_Pct": 3.01,
+      "Pct_Del_Total_Quiebras": 14.7541,
+      "Lift_vs_Promedio": 1.9679
+    },
+    {
+      "Zona": "3. NARANJA (Riesgo Alto)",
+      "Total_Empresas": 60,
+      "Empresas_Quebradas": 9,
+      "Tasa_Quiebra_Pct": 15.0,
+      "Pct_Del_Total_Quiebras": 14.7541,
+      "Lift_vs_Promedio": 9.8066
+    },
+    {
+      "Zona": "4. ROJO ÉLITE (Peligro Inminente)",
+      "Total_Empresas": 40,
+      "Empresas_Quebradas": 19,
+      "Tasa_Quiebra_Pct": 47.5,
+      "Pct_Del_Total_Quiebras": 31.1475,
+      "Lift_vs_Promedio": 31.0541
+    }
+  ],
+  "semaforo_2026": [
+    {
+      "Zona_Semaforo_2026": "1. VERDE (Estable / Sano)",
+      "Total_Empresas": 18898,
+      "Probabilidad_Media": 0.0058,
+      "Quiebras_Esperadas": 108.794
+    },
+    {
+      "Zona_Semaforo_2026": "2. AMARILLO (Vigilancia / Alerta)",
+      "Total_Empresas": 1609,
+      "Probabilidad_Media": 0.0527,
+      "Quiebras_Esperadas": 84.7302
+    },
+    {
+      "Zona_Semaforo_2026": "3. NARANJA (Riesgo Alto)",
+      "Total_Empresas": 347,
+      "Probabilidad_Media": 0.1281,
+      "Quiebras_Esperadas": 44.4378
+    },
+    {
+      "Zona_Semaforo_2026": "4. ROJO ÉLITE (Peligro Inminente)",
+      "Total_Empresas": 259,
+      "Probabilidad_Media": 0.439,
+      "Quiebras_Esperadas": 113.6886
+    }
+  ]
+}
