@@ -1,0 +1,33 @@
+==========================================================================================
+DEMO DE ENTRADA PARCIAL (FEAT-006): prediccion con datos incompletos
+==========================================================================================
+Bandera USAR_FEATURES_MULTIANIO vigente en el pipeline: False
+Modelo cargado: 4 modelos, 90 features, calibrador=IsotonicRegression.
+Cargando saldos anteriores desde caché: prev_2024.pkl
+
+[CASO A] cuentas faltantes + sin historia plurianual
+  NIT                : DEMO-PARCIAL-SIN-HISTORIA-0001
+  Cuentas faltantes  : 5
+  Score ensamble     : 0.088967
+  Prob. calibrada    : 0.017816 (en [0,1]: True)
+  Zona semaforo      : 1. VERDE (Estable / Sano)
+
+[CASO B] historia parcial (solo 2023 y 2024)
+  NIT                : 800000241
+  Cuentas faltantes  : 0
+  Score ensamble     : 0.037995
+  Prob. calibrada    : 0.008264 (en [0,1]: True)
+  Zona semaforo      : 1. VERDE (Estable / Sano)
+
+[CASO C] datos completos (control)
+  NIT                : 800000268
+  Cuentas faltantes  : 0
+  Score ensamble     : 0.059356
+  Prob. calibrada    : 0.013158 (en [0,1]: True)
+  Zona semaforo      : 1. VERDE (Estable / Sano)
+
+==========================================================================================
+Evidencia guardada en: /projects/sandbox/SIIS/fase5_optimizacion/salidas/demo_entrada_parcial.json
+Casos evaluados: 3 | Todos con probabilidad en [0,1]: True
+Demo de entrada parcial completada con exito.
+==========================================================================================

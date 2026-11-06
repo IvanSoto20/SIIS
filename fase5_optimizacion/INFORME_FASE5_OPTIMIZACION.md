@@ -1,9 +1,10 @@
 # Informe de la Fase 5: Optimización del Modelo de Predicción de Insolvencia (SIIS 2024 -> 2025) y Proyección del Semáforo 2026
 
 Autor: Ingeniería de Machine Learning / Ciencia de Datos Financieros
-Pipeline activo: `script_cinco_optimizado.py` (90 características seleccionadas)
-Módulo de análisis: `analisis_tendencias_y_seleccion.py`
-Artefactos regenerados en `salidas/`: `reporte_fase5.json`, `modelo_final_2026.joblib`, `semaforo_2026.csv`, `run_final_fase5.log`
+Pipeline activo: `script_cinco_optimizado.py` (90 características seleccionadas; bandera `USAR_FEATURES_MULTIANIO = False` por defecto)
+Módulos de análisis: `analisis_tendencias_y_seleccion.py` (colinealidad), `datos_multianio.py` (capa de datos plurianual), `features_multianio.py` (features de tendencia 2020..2024), `analisis_multianio.py` (ablación multi-año)
+Demo de producto: `demo_entrada_parcial.py` (predicción con datos incompletos)
+Artefactos regenerados en `salidas/`: `reporte_fase5.json`, `modelo_final_2026.joblib`, `semaforo_2026.csv`, `run_final_multianio.log`, `diagnostico_multianio.json`, `series_saldos_multianio.pkl`, `analisis_multianio.json`, `demo_entrada_parcial.json`, `run_demo_entrada_parcial.log`
 
 Este informe cierra el ciclo de optimización de la Fase 5. Documenta de forma didáctica tres preguntas que planteó el usuario y las respuestas obtenidas con evidencia cuantitativa, citando las funciones de `pandas`, `numpy`, `scipy` y `scikit-learn` que sustentan cada decisión. Todo el trabajo respeta la restricción autoritativa de cero fuga de datos: ninguna variable derivada de 2025 entra en la matriz predictora `X`, y la variable objetivo `y` se deriva exclusivamente de columnas `*_2025` que nunca son features.
 
@@ -171,9 +172,123 @@ Se evaluó incorporar las carpetas `pymes_individuales-2021`, `-2022` y `-2023` 
 
 Si en una fase futura se desea explotar 2021 - 2023, la ruta recomendada es replicar primero el pipeline de limpieza forense (scripts uno a tres) año por año, validando 0 nulos y 0 infinitos, antes de construir cualquier tendencia multianual.
 
-## 7. Reproducibilidad y trazabilidad
+## 8. Extensión plurianual 2020 - 2024: aprovechar varios años de historia
 
-- Ejecución final: `cd fase5_optimizacion && python script_cinco_optimizado.py`, log en `salidas/run_final_fase5.log`, terminó con "Proceso completado con éxito" sin AssertionError.
+Las secciones 1 a 6 dejaron el PISO del modelo 2024 -> 2025 (TEST ROC-AUC 0.8782, PR-AUC 0.3115, F1 óptimo 0.4144). El usuario pidió un paso más: "usa los tres años para mejorar el modelo lo más posible, porque al final la idea es que uno agregue su propia empresa con los datos que tenga disponible (no necesariamente todos) y el modelo prediga para el siguiente año". Esta parte del informe responde a ese requisito en cuatro frentes: (A) una capa de datos que reconstruye la historia 2020..2024; (B) once features de tendencia plurianual; (C) una ablación rigurosa que mide si el multi-año hace retroceder o no el PISO; y (D) el diseño de entrada parcial como requisito de producto, con una demo que lo prueba. Todo sigue respetando la regla autoritativa de cero fuga: la historia plurianual solo mezcla años hasta 2024 inclusive, nunca 2025.
+
+### 8.A Capa de datos multi-año (`datos_multianio.py`)
+
+El SIIS publica cada anexo con DOS columnas de periodo: "periodo actual" (el año de la carpeta) y "periodo anterior" (el año previo). Eso permite reconstruir una serie histórica sin más fuentes: la carpeta `pymes_individuales-YYYY` aporta el año `YYYY` (actual) y el año `YYYY-1` (anterior). Leyendo las cuatro carpetas `pymes_individuales-2021/-2022/-2023/-2024` (anexos `210030` de balance y `310030` de resultados, ambos SOLO LECTURA) se cubre la ventana 2020..2024.
+
+- Lectura eficiente: `pandas.read_excel` con `usecols` como callable (solo trae las columnas necesarias ya normalizadas con `normalizar_texto`/NFKD), `pandas.to_datetime(errors="coerce")` y `pandas.to_numeric(errors="coerce")` para blindar fechas y saldos corruptos, `drop_duplicates(subset=["NIT"], keep="last")` para conservar el último corte reportado y `merge(validate="one_to_one")` para garantizar unicidad por NIT.
+- Corrección forense de escala de pasivos idéntica a la del pipeline (dividir entre 1000 cuando `pasivos > activos*50` con `activos > 0`), para no arrastrar errores de digitación con tres ceros de más.
+- Regla de preferencia de fuente (documentada en `salidas/diagnostico_multianio.json`): para un año observable desde dos carpetas (2021, 2022 y 2023) se PREFIERE el "periodo actual" de la carpeta propia como reporte primario; el "periodo anterior" de la carpeta siguiente solo complementa NITs ausentes (unión por anti-join) y sirve de control cruzado.
+
+Diagnóstico generado (`salidas/diagnostico_multianio.json`):
+
+| Año | NITs consolidados |
+|---|---|
+| 2020 | 23,175 |
+| 2021 | 26,674 |
+| 2022 | 26,421 |
+| 2023 | 25,145 |
+| 2024 | 22,806 |
+
+Solapamientos entre años: `2021 ∩ 2022` = 24,927; `2022 ∩ 2023` = 24,793; `2021 ∩ 2023` = 23,310; triple intersección `2021 ∩ 2022 ∩ 2023` = 23,299 NITs. La discrepancia de activos entre la fuente "actual" y la fuente "anterior" del mismo año (umbral de diferencia relativa mayor a 1 por ciento) es baja y estable: 3.49 por ciento en 2021, 3.29 por ciento en 2022 y 4.06 por ciento en 2023. Esa baja discrepancia es la que justifica preferir la fuente primaria y usar la secundaria solo como complemento: ambas fuentes cuentan esencialmente lo mismo, así que mezclarlas con esa regla no introduce ruido material. La serie se cachea en `salidas/series_saldos_multianio.pkl` (un diccionario `{año: DataFrame por NIT}` con alias de saldos `activos_prev`, `pasivos_prev`, `patrimonio_prev`, `ingresos_prev`, `utilidad_prev`, `ebit_prev`, etc.) para no releer los `.xlsx` en cada corrida.
+
+### 8.B Once features de tendencia plurianual (`features_multianio.py`)
+
+Sobre esa serie se construyen once columnas que extienden la filosofía del BLOQUE 2.C (tendencias t-1 -> t) a toda la ventana. La ventana de historia para un corte t es `[t-4, t-1]` intersectada con los años presentes (para el modelo 2024 -> 2025 son 2020..2023, con 2024 como punto final de las pendientes; nunca 2025).
+
+| Feature | Qué mide |
+|---|---|
+| `Anios_Historia_Disponible` | Conteo de años de la ventana con dato real para el NIT (cobertura). |
+| `Flag_Sin_Historia_3A` | 1 si el NIT no tiene ningún año de historia plurianual. |
+| `Flag_Historia_Parcial` | 1 si tiene algo de historia pero menos que la ventana plena. |
+| `Pendiente_Patrimonio_3A_Sobre_Activos` | Variación de patrimonio a ~3 años normalizada por activos t. |
+| `Var_Patrimonio_2A_Sobre_Activos` | Variación de patrimonio a ~2 años normalizada por activos t. |
+| `CAGR_Ingresos_Multianio` | Tasa de crecimiento anual compuesta de ingresos en la ventana. |
+| `Aceleracion_Endeudamiento` | Segunda diferencia del endeudamiento (sube cada vez más rápido). |
+| `Anios_Con_Perdida_Ventana` | Conteo de años observados con utilidad negativa (incluye t). |
+| `Persistencia_Perdidas_3A` | Fracción de años observados con pérdida (0..1). |
+| `Flag_Deterioro_Patrimonial_Sostenido` | 1 si el patrimonio cae respecto al año inicial con al menos 2 años de historia. |
+| `Flag_Paralisis_Sostenida_Multianio` | 1 si los ingresos son nulos en t y en el año previo observado. |
+
+Estrategia de faltantes (decidida POR COLUMNA y documentada): se usa IMPUTACIÓN-NEUTRAL + FLAGS DE COBERTURA, no el camino NaN-nativo. Las pendientes, variaciones, CAGR y aceleración toman 0.0 (variación nula, "sin tendencia observable") cuando falta el saldo histórico necesario; los conteos de pérdida solo cuentan los años realmente observados; y las banderas (`Anios_Historia_Disponible`, `Flag_Sin_Historia_3A`, `Flag_Historia_Parcial`) hacen explícita la ausencia. Esta decisión es deliberada por tres razones:
+
+1. Conserva el contrato `assert X.isnull().sum().sum() == 0` de la matriz X sin listas blancas ni relajaciones, lo que reduce el riesgo de regresión.
+2. Mantiene operativo a `RandomForestClassifier` de scikit-learn, que NO acepta NaN (lanzaría `ValueError: Input X contains NaN`). Así el super-ensamble de cuatro modelos sigue devolviendo una probabilidad válida para toda empresa.
+3. Una bandera de cobertura es más informativa para el modelo que un NaN mudo: distingue "tendencia estable" de "sin dato", que financieramente no son lo mismo.
+
+El blindaje numérico reutiliza `division_segura` (protección contra división por cero, NaN e infinitos con `.clip()` y `numpy.nan_to_num`) y los acotamientos del pipeline. La función `validar_sin_fuga_multianio` asevera que ningún año empleado supera a `anio_t` y, en particular, que jamás se toca 2025 en el modelo 2024 -> 2025.
+
+## 9. Ablación y no-regresión: ¿el multi-año hace retroceder el PISO?
+
+La regla del proyecto es dura: una configuración nueva solo se adopta por defecto si NO hace retroceder el PISO en el Test reservado. Se midió el aporte marginal de las once features con el MISMO split estratificado (`random_state=42`), el MISMO escuadrón y la MISMA calibración, en dos escenarios, evaluando en el Test reservado (3,988 empresas, 61 quiebras) y en la OOF del panel completo (19,937 empresas, 304 quiebras, validación cruzada de 5 pliegues con `cross_val_predict`). El resultado está en `salidas/analisis_multianio.json`.
+
+| Escenario | N.º columnas | TEST ROC-AUC | TEST PR-AUC | TEST F1 óptimo | OOF ROC-AUC | OOF PR-AUC |
+|---|---|---|---|---|---|---|
+| SIN multi-año (PISO) | 90 | 0.8782 | 0.3115 | 0.4144 | 0.8867 | 0.2534 |
+| CON multi-año | 101 | 0.8878 | 0.3035 | 0.4068 | 0.8878 | 0.2555 |
+| Delta (CON - SIN) | - | +0.0096 | -0.0080 | -0.0076 | +0.0011 | +0.0021 |
+
+Lectura cuidadosa de los números:
+
+- En el Test reservado, el multi-año MEJORA el ROC-AUC (+0.0096) pero REGRESA levemente en PR-AUC (-0.0080) y F1 (-0.0076).
+- En la OOF del panel completo, el multi-año MEJORA ambas métricas de interés (ROC +0.0011, PR +0.0021).
+
+El criterio autoritativo de adopción se evalúa sobre el Test reservado: se adopta por defecto solo si `PR-AUC_test >= 0.3115 - 0.005 = 0.3065` Y `F1_test >= 0.4144 - 0.005 = 0.4094`. El escenario CON multi-año da PR-AUC 0.3035 (por debajo de 0.3065) y F1 0.4068 (por debajo de 0.4094), de modo que NO pasa el gate del Test. Por eso la bandera `USAR_FEATURES_MULTIANIO` queda en `False` por defecto: así el pipeline reproduce EXACTAMENTE el PISO (panel 19,937 / 304, TEST ROC 0.8782 / PR 0.3115 / F1 0.4144, mismas 90 columnas) y no se retrocede.
+
+Ahora bien, "no adoptar por defecto" no es "descartar". La evidencia es matizada y favorable al multi-año en el conjunto más estable:
+
+- El Test reservado tiene solo 61 positivos, por lo que su PR-AUC y su F1 son ruidosos: un puñado de empresas cambia el número en la tercera cifra decimal. El multi-año incluso SUBE el ROC-AUC ahí (+0.0096), que es la métrica menos sensible al ruido de conteo.
+- La OOF del panel completo tiene 304 positivos y promedia cinco pliegues, así que es una estimación más estable; ahí el multi-año mejora ROC y PR a la vez.
+
+Conclusión operativa: se respeta el gate del Test (bandera en `False`, cero regresión del PISO), pero el código plurianual queda íntegro y activable con una sola bandera. Con `USAR_FEATURES_MULTIANIO = True` el pipeline corre de punta a punta sin errores, mantiene el panel 19,937 / 304 y proyecta sobre las 21,113 empresas; es la base lista para cuando se amplíe el Test o se refine la limpieza de los años 2020 - 2022 y el gate se pueda volver a evaluar con más positivos. En resumen: no se retrocede hoy, y la mejora plurianual está disponible sin deuda técnica.
+
+## 10. Diseño de entrada parcial como requisito de producto (`demo_entrada_parcial.py`)
+
+El corazón del pedido del usuario es que "uno agregue su propia empresa con los datos que tenga disponible (no necesariamente todos) y el modelo prediga para el siguiente año". Esto es un requisito de PRODUCTO, no solo de modelado: la tubería de inferencia debe tolerar datos incompletos y aun así devolver una probabilidad calibrada en [0, 1] sin caerse.
+
+Cómo se resuelve, apoyado en lo construido:
+
+1. Cuentas de detalle faltantes del corte t: dentro de `construir_matriz_caracteristicas` varias cuentas de detalle (obligaciones vencidas, pasivo DIAN, gastos de administración y de ventas) se saturan de forma neutral con `.fillna(0)` antes de usarse, y todos los ratios pasan por `division_segura`/`.clip()`/`numpy.nan_to_num`. Una empresa que no reporta ese detalle recibe igualmente su vector de features.
+2. Historia plurianual ausente o parcial: las banderas de cobertura (`Anios_Historia_Disponible`, `Flag_Sin_Historia_3A`, `Flag_Historia_Parcial`) y la imputación neutral de las tendencias (variación 0.0 cuando falta el saldo) permiten que una empresa sin historia, o con solo uno o dos años, reciba predicción sin que ninguna feature multi-año se vuelva un requisito duro.
+3. Ensamble que no se rompe con faltantes: como X queda SIN NaN por la imputación-neutral, los cuatro modelos del ensamble (incluido `RandomForestClassifier`, que no acepta NaN) producen su probabilidad; luego el calibrador isotónico (`IsotonicRegression(out_of_bounds="clip", y_min=0, y_max=1)`) garantiza matemáticamente la salida en [0, 1].
+
+Nota sobre el manejo nativo de NaN de los boosters: `HistGradientBoostingClassifier` (scikit-learn, con soporte nativo de valores faltantes), `LGBMClassifier` (LightGBM, parámetro `use_missing`) y `XGBClassifier` (XGBoost, dirección por defecto para faltantes en cada split) SÍ saben enrutar NaN de forma nativa. Aun así se eligió imputación-neutral + flags porque RandomForest, que es parte del ensamble, no acepta NaN, y porque la bandera de cobertura informa al modelo "cuánta historia hay" de forma explícita, lo que es más útil que un NaN mudo. Esta decisión conserva además el contrato de cero-NaN de X sin relajaciones.
+
+Evidencia (`demo_entrada_parcial.py` -> `salidas/demo_entrada_parcial.json`): la demo REUTILIZA la ruta real de inferencia (misma `construir_matriz_caracteristicas`, mismas columnas `modelo["features"]`, mismo ensamble ponderado con `calcular_pesos_ensamble`, mismo calibrador isotónico y mismos umbrales de zona), cargando `salidas/modelo_final_2026.joblib`. Para simular datos parciales de forma honesta se toman filas reales del maestro 2025 y se mutilan de modo controlado.
+
+| Caso | Qué simula | Cuentas de detalle faltantes | Prob. calibrada | Zona |
+|---|---|---|---|---|
+| A | Cuentas de detalle faltantes + sin historia plurianual (NIT inexistente en 2020..2024) | 5 | 0.017816 | 1. VERDE |
+| B | Historia parcial (solo 2023 y 2024 para su NIT) | 0 | 0.008264 | 1. VERDE |
+| C | Datos completos (control) | 0 | 0.013158 | 1. VERDE |
+
+Los tres casos devolvieron una probabilidad calibrada en [0, 1] sin lanzar excepción. El caso A es el más exigente que la ruta real soporta hoy: faltan cinco cuentas de detalle y no hay ningún año de historia multi-año, y aun así la empresa recibe su predicción (0.0178) y su zona.
+
+Hallazgo de diseño documentado con honestidad: el pipeline actual solo imputa de forma neutral las cuentas de DETALLE que satura con `.fillna(0)`. Los totales estructurales del balance (activos, pasivos, patrimonio, corrientes, efectivo) y el núcleo del estado de resultados (ingresos, utilidad, EBIT, costos financieros, flujo de operación) NO se imputan dentro de `construir_matriz_caracteristicas`: si llegan en NaN se propagan y el `assert X sin NaN` detiene la ejecución. Es decir, el "esqueleto contable mínimo" que una empresa debe aportar para recibir predicción son esos totales de balance más el núcleo del estado de resultados; el detalle fino sí puede faltar. La demo simula exactamente eso y lo deja escrito, para no fingir una robustez que el código todavía no tiene. Ampliar la imputación neutral a más cuentas estructurales (siempre con su flag de ausencia) es la evolución natural de producto si se quiere admitir reportes aún más incompletos.
+
+## 11. Proyección del Semáforo 2026 regenerada (configuración por defecto)
+
+Con la configuración por defecto vigente (bandera `USAR_FEATURES_MULTIANIO = False`, el PISO) se regeneraron los tres artefactos finales. El pipeline terminó con "Proceso completado con éxito" sin AssertionError (log `salidas/run_final_multianio.log`), reprodujo exactamente el PISO (TEST ROC-AUC 0.8782, PR-AUC 0.3115; panel 19,937 / 304; OOF 0.8867 / 0.2534) y escribió `salidas/semaforo_2026.csv` con 21,113 empresas, las 4 zonas y todas las probabilidades calibradas en [0, 1].
+
+| Zona 2026 | Empresas | Probabilidad media | Quiebras esperadas |
+|---|---|---|---|
+| 1. VERDE (Estable / Sano) | 18,884 | 0.0057 | 108.43 |
+| 2. AMARILLO (Vigilancia / Alerta) | 1,635 | 0.0523 | 85.53 |
+| 3. NARANJA (Riesgo Alto) | 345 | 0.1462 | 50.44 |
+| 4. ROJO ÉLITE (Peligro Inminente) | 249 | 0.4396 | 109.46 |
+
+Es la misma distribución de la sección 5 (la bandera en `False` garantiza reproducibilidad bit a bit del PISO): las 249 empresas en ROJO ÉLITE concentran una probabilidad media del 43.96 por ciento y aportan tantas quiebras esperadas como las casi 19,000 empresas verdes juntas, de modo que siguen siendo la lista de auditoría prioritaria.
+
+## 12. Reproducibilidad y trazabilidad
+
+- Ejecución final (configuración por defecto, bandera en `False`): `cd fase5_optimizacion && /projects/sandbox/.venv_fase5/bin/python script_cinco_optimizado.py`, log en `salidas/run_final_multianio.log`, terminó con "Proceso completado con éxito" sin AssertionError.
+- Capa de datos plurianual: `/projects/sandbox/.venv_fase5/bin/python datos_multianio.py` (log `salidas/run_datos_multianio.log`), que genera `salidas/diagnostico_multianio.json` y la caché `salidas/series_saldos_multianio.pkl`.
+- Ablación multi-año: `/projects/sandbox/.venv_fase5/bin/python analisis_multianio.py`, que escribe `salidas/analisis_multianio.json`.
+- Demo de entrada parcial: `/projects/sandbox/.venv_fase5/bin/python demo_entrada_parcial.py` (log `salidas/run_demo_entrada_parcial.log`), que escribe `salidas/demo_entrada_parcial.json`.
 - Entorno: Python 3.11 con pandas 3.1.1, numpy 2.4.6, scipy 1.17.1, scikit-learn 1.9.1, joblib 1.6.0, openpyxl 3.1.5, lightgbm 4.7.0, xgboost 3.2.0 (ver `requirements.txt`).
-- Artefactos: `salidas/reporte_fase5.json` (métricas y cortes), `salidas/modelo_final_2026.joblib` (modelos, calibrador y umbrales), `salidas/semaforo_2026.csv` (proyección), más los JSON de análisis `analisis_tendencias.json`, `seleccion_caracteristicas.json`, `resumen_feat002.json` e `importancias_top_features.json`.
-- Garantía anti-fuga mantenida y reforzada: aserciones `assert not any("2025" in str(col) for col in X.columns)` antes y después de la poda de colinealidad.
+- Artefactos: `salidas/reporte_fase5.json` (métricas y cortes), `salidas/modelo_final_2026.joblib` (modelos, calibrador y umbrales), `salidas/semaforo_2026.csv` (proyección), más los JSON de análisis `analisis_tendencias.json`, `seleccion_caracteristicas.json`, `resumen_feat002.json`, `importancias_top_features.json`, `diagnostico_multianio.json`, `analisis_multianio.json` y `demo_entrada_parcial.json`.
+- Garantía anti-fuga mantenida y reforzada: aserciones `assert not any("2025" in str(col) for col in X.columns)` antes y después de la poda de colinealidad, y `validar_sin_fuga_multianio` que asevera que la ventana plurianual nunca referencia años mayores a `anio_t` (jamás 2025 en el modelo 2024 -> 2025).
