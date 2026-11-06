@@ -142,6 +142,28 @@ RANDOM_STATE = 42
 # como configuración por defecto. Se controla con APLICAR_SELECCION_COLINEALIDAD
 # para poder reproducir la línea base de 101 columnas poniéndolo en False.
 APLICAR_SELECCION_COLINEALIDAD = True
+
+# ------------------------------------------------------------------------------
+# FEATURES DE TENDENCIA PLURIANUAL (FEAT-005)
+# ------------------------------------------------------------------------------
+# Bandera maestra que activa/desactiva el bloque de tendencias PLURIANUALES
+# (ventana 2020..2024) construido en features_multianio.py. Es la respuesta al
+# requisito del usuario de aprovechar varios anios de historia para predecir el
+# anio siguiente, tolerando que una empresa aporte solo los datos que tenga.
+#
+# CONTRATO DE NO-REGRESION (autoritativo): con la bandera en False el pipeline
+# DEBE reproducir EXACTAMENTE el PISO (panel 19937/304, TEST ROC 0.8782 / PR 0.3115
+# / F1 0.4144, mismas columnas). El valor por defecto se fija tras la ablacion de
+# analisis_multianio.py: se adopta True SOLO si las features plurianuales NO
+# regresan el PISO en el Test reservado (PR-AUC_test >= 0.3115-0.005 y
+# F1_test >= 0.4144-0.005); en caso contrario queda en False y se documenta.
+#
+# DECISION DE ADOPCION (ver salidas/analisis_multianio.json y findings de FEAT-005):
+#   Resultado de la ablacion CON vs SIN features plurianuales en el mismo split
+#   estratificado (random_state=42). El valor vigente de la bandera refleja esa
+#   decision numerica. Importar el modulo NO dispara nada (guard __main__).
+USAR_FEATURES_MULTIANIO = False
+
 COLUMNAS_COLINEALES_ELIMINADAS = [
     "Colchon_Patrimonio_Sobre_Pasivos",
     "Delta_Endeudamiento_vs_Sector",
@@ -298,7 +320,12 @@ def obtener_saldos_periodo_anterior(carpeta_origen: Path, nombre_cache: str) -> 
 COL_CIIU = "Clasificación Industrial Internacional Uniforme Versión 4 A.C (CIIU)"
 
 
-def construir_matriz_caracteristicas(df_maestro_t: pd.DataFrame, df_saldos_prev: pd.DataFrame) -> pd.DataFrame:
+def construir_matriz_caracteristicas(
+    df_maestro_t: pd.DataFrame,
+    df_saldos_prev: pd.DataFrame,
+    series_multianio: dict = None,
+    anio_t: int = None,
+) -> pd.DataFrame:
     """
     Genera la matriz predictora X para un corte temporal t integrando:
       - 51 Ratios limpios del SIIS (Fases 1 a 4).
@@ -306,7 +333,24 @@ def construir_matriz_caracteristicas(df_maestro_t: pd.DataFrame, df_saldos_prev:
       - Variables de Asfixia Forense y Ley 1116 (Cesación de Pagos y Runway).
       - Tendencias Dinámicas t-1 -> t.
       - Desviaciones sectoriales CIIU relativas a la media de la industria.
-    Garantía estricta de no fuga: solo utiliza columnas del corte t y del corte t-1.
+      - (Opcional, FEAT-005) Tendencias PLURIANUALES 2020..2024 si
+        ``USAR_FEATURES_MULTIANIO`` es True y se provee ``series_multianio``/``anio_t``.
+    Garantía estricta de no fuga: solo utiliza columnas del corte t y del corte t-1,
+    y (para el bloque plurianual) exclusivamente anios <= ``anio_t`` (jamás 2025).
+
+    Parámetros
+    ----------
+    df_maestro_t : pandas.DataFrame
+        Corte t (con columna 'NIT' y los saldos contables del año t).
+    df_saldos_prev : pandas.DataFrame
+        Saldos del 'Periodo Anterior' (t-1) ya extraídos (BLOQUE 1).
+    series_multianio : dict | None
+        Serie de saldos por año (FEAT-004). Solo se usa si
+        ``USAR_FEATURES_MULTIANIO`` es True; si es None, el bloque plurianual se
+        omite (comportamiento idéntico al PISO).
+    anio_t : int | None
+        Año del corte t (2024 para el entrenamiento 2024->2025; 2025 para la
+        proyección 2026). Obligatorio si se activan las features plurianuales.
     """
     df = df_maestro_t.copy()
     df["NIT_key"] = normalizar_nit(df["NIT"])
@@ -508,6 +552,35 @@ def construir_matriz_caracteristicas(df_maestro_t: pd.DataFrame, df_saldos_prev:
         X[f"{col_rel}_vs_Sector"] = X[col_rel] - media_sectorial
 
     X.index = df_maestro_t.index
+
+    # --------------------------------------------------------------------------
+    # E. TENDENCIAS PLURIANUALES 2020..2024 (FEAT-005, opcional por bandera)
+    # --------------------------------------------------------------------------
+    # Solo se añade el bloque plurianual cuando la bandera maestra está activa y se
+    # provee la serie multi-anual de FEAT-004. Con la bandera en False o sin serie,
+    # X conserva EXACTAMENTE las columnas del PISO (contrato de no-regresión). Las
+    # features plurianuales usan imputación-neutral + flags de cobertura (ver
+    # features_multianio.py), por lo que NO introducen NaN y mantienen operativo a
+    # RandomForest (que no acepta NaN). Anti-fuga: solo años <= anio_t (nunca 2025).
+    if USAR_FEATURES_MULTIANIO and series_multianio is not None:
+        from features_multianio import construir_features_multianio
+        assert anio_t is not None, "Se requiere anio_t para las features plurianuales."
+        saldos_t = {
+            "activos": activos,
+            "pasivos": pasivos,
+            "patrimonio": patrimonio,
+            "ingresos": ingresos,
+            "utilidad": utilidad,
+        }
+        bloque_multianio = construir_features_multianio(
+            df_maestro_t=df_maestro_t,
+            series_multianio=series_multianio,
+            anio_t=anio_t,
+            saldos_t=saldos_t,
+        )
+        # Concatenación por índice (ambos comparten df_maestro_t.index).
+        X = pd.concat([X, bloque_multianio], axis=1)
+
     assert X.isnull().sum().sum() == 0, f"Error: nulos detectados en X: {X.columns[X.isnull().any()].tolist()}"
     return X
 
@@ -541,9 +614,19 @@ def construir_panel_y_splits():
     # Extracción de historia 2023
     prev_2023 = obtener_saldos_periodo_anterior(SIIS_DIR / "pymes_individuales-2024", "prev_2023.pkl")
 
+    # Serie de saldos PLURIANUAL 2020..2024 (FEAT-004) solo si la bandera está activa.
+    # Se carga de caché (salidas/series_saldos_multianio.pkl) para no releer los .xlsx.
+    # El corte t del modelo 2024->2025 es el año 2024 (anti-fuga: ventana <= 2024).
+    series_multianio = None
+    if USAR_FEATURES_MULTIANIO:
+        from datos_multianio import construir_series_saldos_multianio
+        series_multianio = construir_series_saldos_multianio(usar_cache=True)
+
     # Construcción de X estrictamente con datos de 2024 e historia 2023 (0 fuga de 2025)
     columnas_2024_puras = [c for c in df_2024_sanas.columns]
-    X = construir_matriz_caracteristicas(panel[columnas_2024_puras], prev_2023)
+    X = construir_matriz_caracteristicas(
+        panel[columnas_2024_puras], prev_2023, series_multianio=series_multianio, anio_t=2024
+    )
     assert not any("2025" in str(col) for col in X.columns), "ALERTA CRÍTICA: Fuga de datos detectada en X."
 
     # SELECCIÓN POR COLINEALIDAD (FEAT-002): se descartan las columnas redundantes
@@ -809,7 +892,18 @@ def proyectar_semaforo_2026(X_completo, y_completo, df_2025):
     ].copy()
 
     prev_2024 = obtener_saldos_periodo_anterior(SIIS_DIR, "prev_2024.pkl")
-    X_2025 = construir_matriz_caracteristicas(df_2025_sanas, prev_2024)[X_completo.columns]
+
+    # Serie plurianual para la proyección: corte t = 2025, por lo que la ventana de
+    # historia es 2021..2024 (TODO <= 2024; jamás se usa 2025 como insumo, solo como
+    # etiqueta objetivo que NO entra en X). Coherente con el anti-fuga del pipeline.
+    series_multianio_proy = None
+    if USAR_FEATURES_MULTIANIO:
+        from datos_multianio import construir_series_saldos_multianio
+        series_multianio_proy = construir_series_saldos_multianio(usar_cache=True)
+
+    X_2025 = construir_matriz_caracteristicas(
+        df_2025_sanas, prev_2024, series_multianio=series_multianio_proy, anio_t=2025
+    )[X_completo.columns]
     assert X_2025.isnull().sum().sum() == 0, "Nulos detectados en matriz 2025"
 
     score_2025 = sum(

@@ -1,0 +1,23 @@
+Construyendo serie de saldos multi-anual 2020..2024 (FEAT-004)...
+Cargando series multi-anuales desde cache: series_saldos_multianio.pkl
+
+NITs por ano consolidado:
+  2020:  23,175 NITs
+  2021:  26,674 NITs
+  2022:  26,421 NITs
+  2023:  25,145 NITs
+  2024:  22,806 NITs
+Diagnostico multi-anual escrito en: /projects/sandbox/SIIS/fase5_optimizacion/salidas/diagnostico_multianio.json
+
+Solapamientos multi-anuales:
+  2021_inter_2022: 24,927
+  2022_inter_2023: 24,793
+  2021_inter_2023: 23,310
+  triple_2021_2022_2023: 23,299
+
+Discrepancia entre fuentes (mismo ano, dos carpetas):
+  2021: comunes=21,258 discrepantes=741 (3.4857%)
+  2022: comunes=23,096 discrepantes=761 (3.2949%)
+  2023: comunes=22,421 discrepantes=911 (4.0632%)
+
+Proceso FEAT-004 completado con exito.
