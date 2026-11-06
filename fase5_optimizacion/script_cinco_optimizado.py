@@ -164,6 +164,27 @@ APLICAR_SELECCION_COLINEALIDAD = True
 #   decision numerica. Importar el modulo NO dispara nada (guard __main__).
 USAR_FEATURES_MULTIANIO = False
 
+# ------------------------------------------------------------------------------
+# FEATURES DE ANEXOS NO EXPLOTADOS DEL SIIS (FEAT-002)
+# ------------------------------------------------------------------------------
+# Bandera maestra que activa/desactiva el bloque de FEATURES DE ANEXOS (520000
+# flujos de efectivo granular, 801500 deterioro de activos, 801700 provisiones)
+# construido en features_anexos.py. Es la PALANCA 1 de informacion nueva: explota
+# anexos del SIIS que el pipeline aun no usa para afinar la zona roja.
+#
+# CONTRATO DE NO-REGRESION (autoritativo): con la bandera en False el pipeline DEBE
+# reproducir EXACTAMENTE el PISO (panel 19937/304, TEST ROC 0.8782 / PR 0.3115 /
+# F1 0.4144, mismas columnas de X). El valor por defecto NO se decide en esta feature
+# (FEAT-002): la decision de adopcion es FEAT-004, tras evaluar en el Test reservado
+# que las features de anexos NO regresan el PISO; hasta entonces queda en False y se
+# documenta. Importar el modulo NO dispara nada (guard __main__ en features_anexos.py).
+#
+# ENTRADA PARCIAL / ANTI-FUGA: features_anexos usa imputacion-neutral + flags de
+# cobertura (X sin NaN, RandomForest operativo) y lee SOLO el corte correspondiente a
+# anio_t (2024 para el modelo 2024->2025; 2025 para la proyeccion 2026), de modo que
+# el corte 2025 jamas alimenta el modelo 2024->2025 y el assert anti-fuga sigue pasando.
+USAR_FEATURES_ANEXOS = False
+
 COLUMNAS_COLINEALES_ELIMINADAS = [
     "Colchon_Patrimonio_Sobre_Pasivos",
     "Delta_Endeudamiento_vs_Sector",
@@ -638,6 +659,27 @@ def construir_matriz_caracteristicas(
         )
         # Concatenación por índice (ambos comparten df_maestro_t.index).
         X = pd.concat([X, bloque_multianio], axis=1)
+
+    # --------------------------------------------------------------------------
+    # F. FEATURES DE ANEXOS NO EXPLOTADOS 520000/801500/801700 (FEAT-002, opcional)
+    # --------------------------------------------------------------------------
+    # Solo se añade el bloque de anexos cuando la bandera maestra está activa y se
+    # provee anio_t (para elegir el corte correcto). Con la bandera en False, X
+    # conserva EXACTAMENTE las columnas del PISO (contrato de no-regresión). Las
+    # features de anexos usan imputación-neutral + flags de cobertura (ver
+    # features_anexos.py), por lo que NO introducen NaN y mantienen operativo a
+    # RandomForest (que no acepta NaN). Anti-fuga: features_anexos lee SOLO el corte
+    # de anio_t (2024 para el modelo 2024->2025; 2025 para la proyección 2026) y
+    # ninguna columna lleva el literal '2025' en su nombre.
+    if USAR_FEATURES_ANEXOS and anio_t is not None:
+        from features_anexos import construir_features_anexos
+        bloque_anexos = construir_features_anexos(
+            df_maestro_t=df_maestro_t,
+            anio_t=anio_t,
+            usar_cache=True,
+        )
+        # Concatenación por índice (ambos comparten df_maestro_t.index).
+        X = pd.concat([X, bloque_anexos], axis=1)
 
     assert X.isnull().sum().sum() == 0, f"Error: nulos detectados en X: {X.columns[X.isnull().any()].tolist()}"
     return X
