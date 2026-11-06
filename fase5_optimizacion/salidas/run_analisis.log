@@ -1,0 +1,80 @@
+==========================================================================================
+FEAT-002: ANÁLISIS DE TENDENCIAS 2023->2024 Y SELECCIÓN DE CARACTERÍSTICAS
+==========================================================================================
+[REPRO] base.APLICAR_SELECCION_COLINEALIDAD forzada a False para medir sobre el set COMPLETO (101 columnas); el análisis es auto-consistente y reproducible.
+Cargando saldos anteriores desde caché: prev_2023.pkl
+
+Panel: 19937 empresas x 101 features | quiebras y=304
+ANTI-FUGA OK: ninguna columna de X contiene '2025'.
+
+[ABLACIÓN] Columnas de tendencia detectadas (10): ['Flag_Sin_Historia_Prev', 'Delta_Endeudamiento', 'Var_Pct_Patrimonio', 'Var_Pct_Ingresos', 'Delta_ROA_Neto', 'Flag_Dos_Anios_Perdida', 'Perdidas_Acumuladas_2A_Sobre_Activos', 'Flag_Paralisis_Comercial', 'Var_Pct_Patrimonio_vs_Sector', 'Delta_Endeudamiento_vs_Sector']
+
+[ABLACIÓN] Escenario CON tendencias (X completo)...
+
+Entrenando Escuadrón Élite Forense sobre X_train (15,949 empresas)...
+  LightGBM_Forense       -> ROC-AUC: 0.8630 | PR-AUC: 0.2996
+  XGBoost_Forense        -> ROC-AUC: 0.8671 | PR-AUC: 0.2690
+  HistGradientBoosting   -> ROC-AUC: 0.8624 | PR-AUC: 0.2455
+  RandomForest_Forense   -> ROC-AUC: 0.8784 | PR-AUC: 0.3032
+
+---> SUPER-ENSAMBLE FORENSE 4 MODELOS (0.30*LightGBM_Forense + 0.30*XGBoost_Forense + 0.20*HistGradientBoosting + 0.20*RandomForest_Forense)
+     ROC-AUC: 0.8743 | PR-AUC: 0.2995
+
+[ABLACIÓN] Escenario SIN tendencias (91 columnas)...
+
+Entrenando Escuadrón Élite Forense sobre X_train (15,949 empresas)...
+  LightGBM_Forense       -> ROC-AUC: 0.8652 | PR-AUC: 0.2983
+  XGBoost_Forense        -> ROC-AUC: 0.8742 | PR-AUC: 0.3119
+  HistGradientBoosting   -> ROC-AUC: 0.8538 | PR-AUC: 0.2561
+  RandomForest_Forense   -> ROC-AUC: 0.8793 | PR-AUC: 0.2897
+
+---> SUPER-ENSAMBLE FORENSE 4 MODELOS (0.30*LightGBM_Forense + 0.30*XGBoost_Forense + 0.20*HistGradientBoosting + 0.20*RandomForest_Forense)
+     ROC-AUC: 0.8768 | PR-AUC: 0.3070
+
+[ABLACIÓN] OOF del panel completo CON tendencias...
+
+Entrenando Escuadrón Élite Forense sobre X_train (15,949 empresas)...
+  LightGBM_Forense       -> ROC-AUC: 0.9985 | PR-AUC: 0.9046
+  XGBoost_Forense        -> ROC-AUC: 0.9955 | PR-AUC: 0.7959
+  HistGradientBoosting   -> ROC-AUC: 0.9575 | PR-AUC: 0.4775
+  RandomForest_Forense   -> ROC-AUC: 0.9799 | PR-AUC: 0.7082
+
+---> SUPER-ENSAMBLE FORENSE 4 MODELOS (0.30*LightGBM_Forense + 0.30*XGBoost_Forense + 0.20*HistGradientBoosting + 0.20*RandomForest_Forense)
+     ROC-AUC: 0.9955 | PR-AUC: 0.7805
+
+[OK] Guardado salidas/analisis_tendencias.json
+
+[SELECCIÓN] |rho|>=0.95 Spearman: 15 pares colineales, 11 columnas eliminadas, 90 conservadas.
+
+[RE-EVAL] Evaluando subconjunto seleccionado (90 features)...
+
+Entrenando Escuadrón Élite Forense sobre X_train (15,949 empresas)...
+  LightGBM_Forense       -> ROC-AUC: 0.8665 | PR-AUC: 0.3002
+  XGBoost_Forense        -> ROC-AUC: 0.8736 | PR-AUC: 0.3106
+  HistGradientBoosting   -> ROC-AUC: 0.8611 | PR-AUC: 0.2397
+  RandomForest_Forense   -> ROC-AUC: 0.8845 | PR-AUC: 0.3147
+
+---> SUPER-ENSAMBLE FORENSE 4 MODELOS (0.30*LightGBM_Forense + 0.30*XGBoost_Forense + 0.20*HistGradientBoosting + 0.20*RandomForest_Forense)
+     ROC-AUC: 0.8782 | PR-AUC: 0.3115
+[RE-EVAL] caida PR-AUC=-0.012, caida F1=-0.0084 -> CONSERVAR selección
+[OK] Guardado salidas/seleccion_caracteristicas.json
+
+Entrenando Escuadrón Élite Forense sobre X_train (15,949 empresas)...
+  LightGBM_Forense       -> ROC-AUC: 0.8665 | PR-AUC: 0.3002
+  XGBoost_Forense        -> ROC-AUC: 0.8736 | PR-AUC: 0.3106
+  HistGradientBoosting   -> ROC-AUC: 0.8611 | PR-AUC: 0.2397
+  RandomForest_Forense   -> ROC-AUC: 0.8845 | PR-AUC: 0.3147
+
+---> SUPER-ENSAMBLE FORENSE 4 MODELOS (0.30*LightGBM_Forense + 0.30*XGBoost_Forense + 0.20*HistGradientBoosting + 0.20*RandomForest_Forense)
+     ROC-AUC: 0.8782 | PR-AUC: 0.3115
+
+[AFINAMIENTO] Comparativa de estrategias de combinación (Test):
+  pesos_base       -> ROC 0.8782 | PR 0.3115 | F1 0.4144
+  pesos_uniformes  -> ROC 0.8787 | PR 0.3098 | F1 0.4211
+  rank_averaging   -> ROC 0.8773 | PR 0.3034 | F1 0.4035
+
+[OK] Guardado salidas/importancias_top_features.json
+
+[OK] Guardado salidas/resumen_feat002.json
+
+Proceso de análisis FEAT-002 completado con éxito.

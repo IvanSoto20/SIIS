@@ -1,0 +1,3 @@
+# Artefactos de compilación de Python (no se versionan)
+__pycache__/
+*.pyc

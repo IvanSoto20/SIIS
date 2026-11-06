@@ -1,0 +1,42 @@
+{
+  "columnas_tendencia": [
+    "Flag_Sin_Historia_Prev",
+    "Delta_Endeudamiento",
+    "Var_Pct_Patrimonio",
+    "Var_Pct_Ingresos",
+    "Delta_ROA_Neto",
+    "Flag_Dos_Anios_Perdida",
+    "Perdidas_Acumuladas_2A_Sobre_Activos",
+    "Flag_Paralisis_Comercial",
+    "Var_Pct_Patrimonio_vs_Sector",
+    "Delta_Endeudamiento_vs_Sector"
+  ],
+  "n_columnas_total_con": 101,
+  "n_columnas_total_sin": 91,
+  "test_con_tendencias": {
+    "roc_auc": 0.8743,
+    "pr_auc": 0.2995,
+    "f1_optimo": 0.406,
+    "umbral_f1_optimo": 0.4314,
+    "precision_en_f1": 0.375,
+    "recall_en_f1": 0.4426
+  },
+  "test_sin_tendencias": {
+    "roc_auc": 0.8768,
+    "pr_auc": 0.307,
+    "f1_optimo": 0.4194,
+    "umbral_f1_optimo": 0.4777,
+    "precision_en_f1": 0.4127,
+    "recall_en_f1": 0.4262
+  },
+  "delta_aporte_tendencias_test": {
+    "roc_auc": -0.0025,
+    "pr_auc": -0.0075,
+    "f1_optimo": -0.0134
+  },
+  "oof_panel_completo_con_tendencias": {
+    "roc_auc": 0.8878,
+    "pr_auc": 0.2598
+  },
+  "nota_metodologica": "Ablación variante (a): se quitan solo las columnas de tendencia crudas; los índices sintéticos Altman_Z_Emergente y Score_Alerta_Temprana NO se recalculan, por lo que el delta es una cota inferior conservadora del aporte real de las tendencias."
+}

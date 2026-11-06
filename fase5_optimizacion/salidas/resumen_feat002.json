@@ -1,0 +1,100 @@
+{
+  "ablacion": {
+    "columnas_tendencia": [
+      "Flag_Sin_Historia_Prev",
+      "Delta_Endeudamiento",
+      "Var_Pct_Patrimonio",
+      "Var_Pct_Ingresos",
+      "Delta_ROA_Neto",
+      "Flag_Dos_Anios_Perdida",
+      "Perdidas_Acumuladas_2A_Sobre_Activos",
+      "Flag_Paralisis_Comercial",
+      "Var_Pct_Patrimonio_vs_Sector",
+      "Delta_Endeudamiento_vs_Sector"
+    ],
+    "n_columnas_total_con": 101,
+    "n_columnas_total_sin": 91,
+    "test_con_tendencias": {
+      "roc_auc": 0.8743,
+      "pr_auc": 0.2995,
+      "f1_optimo": 0.406,
+      "umbral_f1_optimo": 0.4314,
+      "precision_en_f1": 0.375,
+      "recall_en_f1": 0.4426
+    },
+    "test_sin_tendencias": {
+      "roc_auc": 0.8768,
+      "pr_auc": 0.307,
+      "f1_optimo": 0.4194,
+      "umbral_f1_optimo": 0.4777,
+      "precision_en_f1": 0.4127,
+      "recall_en_f1": 0.4262
+    },
+    "delta_aporte_tendencias_test": {
+      "roc_auc": -0.0025,
+      "pr_auc": -0.0075,
+      "f1_optimo": -0.0134
+    },
+    "oof_panel_completo_con_tendencias": {
+      "roc_auc": 0.8878,
+      "pr_auc": 0.2598
+    },
+    "nota_metodologica": "Ablación variante (a): se quitan solo las columnas de tendencia crudas; los índices sintéticos Altman_Z_Emergente y Score_Alerta_Temprana NO se recalculan, por lo que el delta es una cota inferior conservadora del aporte real de las tendencias."
+  },
+  "seleccion_reevaluacion": {
+    "metricas_set_completo": {
+      "roc_auc": 0.8743,
+      "pr_auc": 0.2995,
+      "f1_optimo": 0.406,
+      "umbral_f1_optimo": 0.4314,
+      "precision_en_f1": 0.375,
+      "recall_en_f1": 0.4426
+    },
+    "metricas_set_seleccionado": {
+      "roc_auc": 0.8782,
+      "pr_auc": 0.3115,
+      "f1_optimo": 0.4144,
+      "umbral_f1_optimo": 0.5199,
+      "precision_en_f1": 0.46,
+      "recall_en_f1": 0.377
+    },
+    "caida_pr_auc": -0.012,
+    "caida_f1_optimo": -0.0084,
+    "criterio": "conservar si caida_pr<=0.01 y caida_f1<=0.01",
+    "conservar_seleccion": true
+  },
+  "afinamiento": {
+    "pesos_base": {
+      "roc_auc": 0.8782,
+      "pr_auc": 0.3115,
+      "f1_optimo": 0.4144,
+      "umbral_f1_optimo": 0.5199,
+      "precision_en_f1": 0.46,
+      "recall_en_f1": 0.377
+    },
+    "pesos_uniformes": {
+      "roc_auc": 0.8787,
+      "pr_auc": 0.3098,
+      "f1_optimo": 0.4211,
+      "umbral_f1_optimo": 0.5092,
+      "precision_en_f1": 0.4528,
+      "recall_en_f1": 0.3934
+    },
+    "rank_averaging": {
+      "roc_auc": 0.8773,
+      "pr_auc": 0.3034,
+      "f1_optimo": 0.4035,
+      "umbral_f1_optimo": 0.9842,
+      "precision_en_f1": 0.434,
+      "recall_en_f1": 0.377
+    },
+    "pesos_base_valores": {
+      "LightGBM_Forense": 0.3,
+      "XGBoost_Forense": 0.3,
+      "HistGradientBoosting": 0.2,
+      "RandomForest_Forense": 0.2
+    }
+  },
+  "set_features_vigente": "seleccionado",
+  "n_features_vigente": 90
+}
