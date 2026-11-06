@@ -185,6 +185,30 @@ USAR_FEATURES_MULTIANIO = False
 # el corte 2025 jamas alimenta el modelo 2024->2025 y el assert anti-fuga sigue pasando.
 USAR_FEATURES_ANEXOS = False
 
+# ------------------------------------------------------------------------------
+# MODELO EN CASCADA DE 2 ETAPAS PARA LA ZONA ROJA (FEAT-003)
+# ------------------------------------------------------------------------------
+# Bandera maestra que activa/desactiva la PALANCA 2: un clasificador en CASCADA de 2
+# etapas (ETAPA 1 = ensamble actual que filtra sanas vs en-riesgo; ETAPA 2 =
+# especialista entrenado SOLO sobre la cola de riesgo para separar quiebra de
+# supervivencia estresada). La logica vive en modelo_cascada.py; el score final es UN
+# numero por empresa en [0,1] monotono-compatible con la calibracion isotonica.
+#
+# CONTRATO DE NO-REGRESION (autoritativo): con la bandera en False el pipeline DEBE
+# reproducir EXACTAMENTE el PISO (panel 19937/304, TEST ROC 0.8782 / PR 0.3115 /
+# F1 0.4144, rojo elite 40 empresas con 19 quiebras, OOF ROC 0.8867 / PR 0.2534). Con
+# la bandera en False modelo_cascada NI SIQUIERA se importa, de modo que el camino es
+# byte a byte el del PISO. El valor por defecto NO se decide en esta feature (FEAT-003):
+# la decision de adopcion es FEAT-004, tras evaluar en el Test reservado y en OOF que la
+# cascada SUBE la zona roja sin regresar el PISO; hasta entonces queda en False.
+#
+# COMBINABLE CON USAR_FEATURES_ANEXOS: si los anexos estan activos, X ya trae esas
+# columnas y la cascada las usa igual; si no, la cascada funciona sola. Cuando la
+# bandera esta en True, entrenar_escuadron_elite y proyectar_semaforo_2026 DELEGAN el
+# calculo del score a modelo_cascada, SIN cambiar splits, calibracion, exportacion ni
+# semaforo. Importar modelo_cascada NO dispara nada (guard __main__ en ese modulo).
+USAR_CASCADA = False
+
 COLUMNAS_COLINEALES_ELIMINADAS = [
     "Colchon_Patrimonio_Sobre_Pasivos",
     "Delta_Endeudamiento_vs_Sector",
@@ -826,6 +850,19 @@ def entrenar_escuadron_elite(X_train, y_train, X_test, y_test):
     assert abs(sum(pesos.values()) - 1.0) < 1e-9, "Los pesos del ensamble no suman 1.0."
     score_ensamble = sum(peso * predicciones_test[nombre] for nombre, peso in pesos.items())
 
+    # DELEGACION A LA CASCADA (FEAT-003, opcional por bandera). Con USAR_CASCADA en True
+    # el SCORE de Test deja de ser el ensamble plano y pasa a ser el score de la cascada
+    # de 2 etapas (etapa 1 = filtro en-riesgo; etapa 2 = especialista en la cola). NO se
+    # cambia el split ni el semaforo: solo se reemplaza el vector de score que alimenta a
+    # auditar_efectividad_test. Con la bandera en False este bloque no se ejecuta (ni se
+    # importa modelo_cascada), de modo que el PISO se reproduce byte a byte.
+    if USAR_CASCADA:
+        from modelo_cascada import score_cascada_test
+        score_ensamble = score_cascada_test(X_train, y_train, X_test)
+        assert np.all((score_ensamble >= 0.0) & (score_ensamble <= 1.0)), \
+            "El score de cascada (Test) debe estar en [0,1]."
+        print("  [CASCADA] Score de Test reemplazado por el modelo en cascada de 2 etapas.")
+
     roc_ens = roc_auc_score(y_test, score_ensamble)
     pr_ens = average_precision_score(y_test, score_ensamble)
     detalle_pesos = " + ".join(f"{p:.2f}*{n}" for n, p in pesos.items())
@@ -972,6 +1009,24 @@ def proyectar_semaforo_2026(X_completo, y_completo, df_2025):
 
     score_oof_ensamble = sum(peso * oofs[nombre] for nombre, peso in pesos_finales.items())
 
+    # DELEGACION A LA CASCADA (FEAT-003, opcional por bandera). Con USAR_CASCADA en True
+    # el score OOF del panel completo que alimenta la CALIBRACION ISOTONICA y los
+    # UMBRALES del semaforo pasa a ser el score OOF de la cascada (una cascada completa
+    # por pliegue, sin fuga). La ruta de calibracion, umbrales y exportacion NO cambia:
+    # solo se sustituye el vector score_oof_ensamble. Con la bandera en False este bloque
+    # no se ejecuta (ni se importa modelo_cascada) y el OOF es el del PISO.
+    cascada_proyeccion = None
+    if USAR_CASCADA:
+        from modelo_cascada import ModeloCascada, score_cascada_oof
+        score_oof_ensamble = score_cascada_oof(X_completo, y_completo)
+        assert np.all((score_oof_ensamble >= 0.0) & (score_oof_ensamble <= 1.0)), \
+            "El score OOF de cascada debe estar en [0,1]."
+        # Cascada ajustada sobre el PANEL COMPLETO para puntuar la poblacion 2025 abajo
+        # (mismo rol que los modelos_finales reentrenados para el ensamble plano).
+        cascada_proyeccion = ModeloCascada()
+        cascada_proyeccion.fit(X_completo, y_completo)
+        print("  [CASCADA] Score OOF del panel reemplazado por el modelo en cascada de 2 etapas.")
+
     roc_final = roc_auc_score(y_completo, score_oof_ensamble)
     pr_final = average_precision_score(y_completo, score_oof_ensamble)
     print(f"Desempeño OOF en Panel Completo (19,937 empresas) -> ROC-AUC: {roc_final:.4f} | PR-AUC: {pr_final:.4f}")
@@ -1013,6 +1068,18 @@ def proyectar_semaforo_2026(X_completo, y_completo, df_2025):
         for nombre, peso in pesos_finales.items()
     )
 
+    # DELEGACION A LA CASCADA (FEAT-003, opcional por bandera). Con USAR_CASCADA en True
+    # el score de la poblacion 2025 proviene de la cascada ajustada sobre el panel
+    # completo (coherente con el score OOF que fijo umbrales y calibrador). Asi el
+    # semaforo 2026 usa el MISMO criterio de score en todo el flujo. Con la bandera en
+    # False el score_2025 es el del ensamble plano (PISO reproducido byte a byte).
+    if USAR_CASCADA:
+        assert cascada_proyeccion is not None, "La cascada de proyeccion no fue ajustada."
+        score_2025 = cascada_proyeccion.predict_proba(X_2025)
+        assert np.all((score_2025 >= 0.0) & (score_2025 <= 1.0)), \
+            "El score de cascada (2025) debe estar en [0,1]."
+        print("  [CASCADA] Score de proyeccion 2025 reemplazado por el modelo en cascada.")
+
     probs_calibradas_2026 = calibrador_isotonico.predict(score_2025)
 
     zonas_2026 = np.select(
@@ -1053,8 +1120,12 @@ def proyectar_semaforo_2026(X_completo, y_completo, df_2025):
     print("================================================================================================")
     print(resumen_2026.round(4).to_string())
 
-    # Exportar modelo y metadatos
-    joblib.dump({
+    # Exportar modelo y metadatos. Con USAR_CASCADA activo se adjunta ademas la cascada
+    # ajustada sobre el panel completo (clave "cascada") y se marca "usar_cascada": True,
+    # de modo que el artefacto sea AUTOCONSISTENTE con el score que fijo umbrales y
+    # calibrador. Con la bandera en False el diccionario exportado es EXACTAMENTE el del
+    # PISO (sin claves nuevas), preservando la reproducibilidad byte a byte del artefacto.
+    artefacto = {
         "modelos": modelos_finales,
         "features": list(X_completo.columns),
         "calibrador": calibrador_isotonico,
@@ -1063,7 +1134,11 @@ def proyectar_semaforo_2026(X_completo, y_completo, df_2025):
             "naranja": umbral_naranja_2026,
             "amarillo": umbral_amarillo_2026
         }
-    }, SALIDAS_DIR / "modelo_final_2026.joblib")
+    }
+    if USAR_CASCADA:
+        artefacto["usar_cascada"] = True
+        artefacto["cascada"] = cascada_proyeccion
+    joblib.dump(artefacto, SALIDAS_DIR / "modelo_final_2026.joblib")
 
     return resumen_2026, df_resultado_2026
 

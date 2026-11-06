@@ -1,0 +1,26 @@
+====================================================================================================
+SMOKE TEST: MODELO EN CASCADA DE 2 ETAPAS (FEAT-003)
+====================================================================================================
+Cargando saldos anteriores desde caché: prev_2023.pkl
+Panel: 19,937 empresas x 90 features | positivos=304 | train=15,949/243 | test=3,988/61
+USAR_FEATURES_ANEXOS vigente: False  |  PERCENTIL_COLA=88.0
+
+[CHECKPOINT 1/4] Ajustando cascada sobre X_train...
+  Umbral de cola (u_cola, escala score etapa1): 0.0791
+  Filas de entrenamiento en la cola           : 1,914 (12.0% del train)
+  Positivos capturados por la cola (recall e1): 171/243 (70.4%)
+  scale_pos_weight recalculado para la etapa 2: 10.19 (vs 7.0 del PISO)
+
+[CHECKPOINT 2/4] Puntuando el Test reservado (3988 empresas)...
+  TEST -> ROC 0.8800 | PR 0.3048 | TP top1%: 17/40 | TP top2.5%: 27/100 | F1max 0.4107
+
+[CHECKPOINT 3/4] OOF de 5 pliegues de la cascada (19937 empresas)...
+  OOF -> ROC 0.8862 | PR 0.2527 | TP top1%: 84/200 | TP top2.5%: 123/499 | F1max 0.3515
+
+[CHECKPOINT 4/4] Verificacion de entrada parcial (score valido en [0,1])...
+  Score de cascada para las 19,937 empresas del panel: min=0.0003, max=0.9623 (todo en [0,1], sin NaN).
+Cargando saldos anteriores desde caché: prev_2024.pkl
+  Empresa de ENTRADA PARCIAL (5 cuentas de detalle vaciadas): score de cascada = 0.259777 (en [0,1], sin excepcion).
+
+Resultados guardados en smoke_modelo_cascada.json (429.2 s).
+Smoke test de la cascada completado con exito: score unico en [0,1] en OOF y Test.
