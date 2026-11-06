@@ -1,0 +1,17 @@
+====================================================================================================
+ARNES DE EVALUACION HONESTA DE LA ZONA ROJA (FEAT-001): REPRODUCCION DEL PISO
+====================================================================================================
+Cargando saldos anteriores desde caché: prev_2023.pkl
+Panel reproducido: 19,937 empresas x 90 features | positivos=304 | train=15,949/243 | test=3,988/61
+Escuadron del PISO: ['LightGBM', 'XGBoost', 'HistGradientBoosting', 'RandomForest']
+
+[OOF] Calculando OOF de 5 pliegues (reproduccion del PISO)...
+  OOF -> ROC 0.8867 | PR 0.2534 | TP top0.5%: 50/100 | TP top1%: 85/200 | TP top2.5%: 124/499 | F1max 0.3531
+
+[TEST] Entrenando en X_train y puntuando X_test (reproduccion del PISO)...
+  TEST -> ROC 0.8782 | PR 0.3115 | TP top0.5%: 12/20 | TP top1%: 19/40 | TP top2.5%: 27/100 | F1max 0.4144
+
+  Arnes VALIDADO: reproduce el PISO en OOF y Test dentro de tolerancia.
+
+Resultados guardados en evaluacion_zona_roja_base.json (69.1 s).
+Arnes listo: el PISO queda reproducido y disponible como linea base honesta.
