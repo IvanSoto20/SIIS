@@ -4,6 +4,7 @@ Autor: Ingeniería de Machine Learning / Ciencia de Datos Financieros
 Pipeline activo: `script_cinco_optimizado.py` (90 características seleccionadas; bandera `USAR_FEATURES_MULTIANIO = False` por defecto)
 Módulos de análisis: `analisis_tendencias_y_seleccion.py` (colinealidad), `datos_multianio.py` (capa de datos plurianual), `features_multianio.py` (features de tendencia 2020..2024), `analisis_multianio.py` (ablación multi-año)
 Demo de producto: `demo_entrada_parcial.py` (predicción con datos incompletos)
+Evaluación de transiciones históricas (sección 11): `maestros_historicos.py`, `control_deriva_maestros.py`, `analisis_apilado_transiciones.py`, `replica_confirmatoria_apilado.py`
 Artefactos regenerados en `salidas/`: `reporte_fase5.json`, `modelo_final_2026.joblib`, `semaforo_2026.csv`, `run_final_multianio.log`, `diagnostico_multianio.json`, `series_saldos_multianio.pkl`, `analisis_multianio.json`, `demo_entrada_parcial.json`, `run_demo_entrada_parcial.log`
 
 Este informe cierra el ciclo de optimización de la Fase 5. Documenta de forma didáctica tres preguntas que planteó el usuario y las respuestas obtenidas con evidencia cuantitativa, citando las funciones de `pandas`, `numpy`, `scipy` y `scikit-learn` que sustentan cada decisión. Todo el trabajo respeta la restricción autoritativa de cero fuga de datos: ninguna variable derivada de 2025 entra en la matriz predictora `X`, y la variable objetivo `y` se deriva exclusivamente de columnas `*_2025` que nunca son features.
@@ -306,3 +307,104 @@ Es la misma distribución de la sección 5 (la bandera en `False` garantiza repr
 - Entorno: Python 3.11 con pandas 3.1.1, numpy 2.4.6, scipy 1.17.1, scikit-learn 1.9.1, joblib 1.6.0, openpyxl 3.1.5, lightgbm 4.7.0, xgboost 3.2.0 (ver `requirements.txt`).
 - Artefactos: `salidas/reporte_fase5.json` (métricas y cortes), `salidas/modelo_final_2026.joblib` (modelos, calibrador y umbrales), `salidas/semaforo_2026.csv` (proyección), más los JSON de análisis `analisis_tendencias.json`, `seleccion_caracteristicas.json`, `resumen_feat002.json`, `importancias_top_features.json`, `diagnostico_multianio.json`, `analisis_multianio.json` y `demo_entrada_parcial.json`.
 - Garantía anti-fuga mantenida y reforzada: aserciones `assert not any("2025" in str(col) for col in X.columns)` antes y después de la poda de colinealidad, y `validar_sin_fuga_multianio` que asevera que la ventana plurianual nunca referencia años mayores a `anio_t` (jamás 2025 en el modelo 2024 -> 2025).
+
+## 11. Más empresas para afinar la zona roja: apilar transiciones históricas (evaluada y NO aplicada)
+
+Pedido del usuario: usar la información de empresas de años anteriores, con todos los años disponibles, para combatir el cuello de botella de pocos positivos, evaluar si es buena estrategia y aplicarla solo si lo es. Esta sección documenta la evaluación completa. Conclusión: la estrategia mejora la discriminación global (ROC-AUC) pero no mejora la zona roja, así que no se aplicó. El modelo de producción, `reporte_fase5.json`, `modelo_final_2026.joblib` y `semaforo_2026.csv` quedan sin cambios (el diff de esos archivos es vacío).
+
+### 11.1 Qué se construyó
+
+- Maestros históricos 2021, 2022 y 2023 con las 94 columnas y los 51 ratios de la Fase 4 (`maestros_historicos.py`, FEAT-001), reconstruidos desde los anexos del SIIS en modo solo lectura. El esquema coincide columna a columna con el de 2024.
+- Saldos del "Periodo Anterior" (t-1) de cada transición: `prev_2020.pkl`, `prev_2021.pkl` y `prev_2022.pkl`, que se suman a los de 2023 y 2024.
+- Tres transiciones adicionales con la misma representación de 90 variables y la misma definición `y_estricto` del panel 2024 -> 2025 (`analisis_apilado_transiciones.py`):
+
+| Transición | Empresas | Positivos | Tasa | Colapso legal | Colapso patrimonial |
+|---|---|---|---|---|---|
+| 2021 -> 2022 | 19,828 | 364 | 1.836% | 149 | 223 |
+| 2022 -> 2023 | 21,523 | 320 | 1.487% | 135 | 190 |
+| 2023 -> 2024 | 20,911 | 344 | 1.645% | 141 | 215 |
+| Historia apilada | 62,262 | 1,028 | 1.651% | | |
+
+La historia aporta 1,028 positivos contra los 304 del panel 2024 -> 2025, es decir 4.38 veces más positivos totales. El dimensionamiento de FEAT-001 había estimado 425 porque solo contaba la parte legal de la etiqueta; al cruzar con el maestro de t+1 se suma la parte patrimonial (`Flag_Quiebra_Patrimonial`) y el total real es mayor.
+
+Controles de calidad. La deriva entre años es baja: el estadístico de Kolmogorov-Smirnov de dos muestras (`scipy.stats.ks_2samp`) promedia 0.017 entre 2023 y 2024, 0.028 para 2022 y 0.035 para 2021, frente a 0.018 de deriva natural entre 2022 y 2023. La edad de la empresa se calcula contra la `Fecha de Corte` de cada año (no contra un año fijo), por lo que no hay desfase entre transiciones. Cada transición asevera que sus columnas coinciden con las del modelo vigente, que X no tiene nulos y que ninguna columna proviene de t+1.
+
+### 11.2 Protocolo de evaluación (tres niveles)
+
+1. Backtest hacia adelante: se entrena solo con transiciones que terminan en 2024 o antes y se evalúa en las 19,937 empresas de 2024 -> 2025 (304 positivos). Ninguna fila de 2025 toca el entrenamiento. Se repite un año atrás (evaluando en 2023 -> 2024) como réplica.
+2. Protocolo del modelo vigente: Test reservado de 3,988 empresas (61 positivos) y OOF de 5 pliegues sobre las 19,937 empresas (`StratifiedKFold(shuffle=True, random_state=42)`). El arnés reproduce los números publicados (OOF base: ROC-AUC 0.8867 y PR-AUC 0.2534; Test base: 0.8782, 0.3115 y F1 0.4144), lo que valida la comparación.
+3. Control anti-memorización: el mismo OOF, pero retirando de la historia las empresas (NIT) que se están validando en ese pliegue.
+
+La incertidumbre se midió con bootstrap pareado (`numpy.random.default_rng`, 500 remuestreos con reemplazo sobre las mismas empresas), porque con 61 positivos las diferencias de tercera cifra decimal son ruido.
+
+Regla de adopción declarada antes de ver resultados, para el candidato "historia apilada con peso 1.0": G1, PR-AUC del OOF mayor que la base y ROC-AUC sin caer más de 0.002; G2, aciertos del OOF en el top 1% y en el top 2.5% sin empeorar y con mejora estricta en al menos uno; G3, Test publicado dentro de 0.005 del piso en las tres métricas; G4, la versión agrupada (sin los NIT validados) sigue superando la base en PR-AUC; G5, el backtest con 3 años de historia no queda por debajo del backtest con 1 año.
+
+### 11.3 Resultados
+
+OOF de 5 pliegues sobre 2024 -> 2025 (304 positivos, 1,994 empresas en el top 10%):
+
+| Variante | ROC-AUC | PR-AUC | Aciertos top 0.5% (de 100) | Aciertos top 1% (de 200) | Aciertos top 2.5% (de 499) | Aciertos top 10% (de 1,994) |
+|---|---|---|---|---|---|---|
+| Base (modelo vigente) | 0.8867 | 0.2534 | 50 | 85 | 124 | 206 |
+| Historia apilada, peso 1.0 | 0.9002 | 0.2621 | 48 | 82 | 128 | 214 |
+| Historia apilada, peso 0.5 | 0.9010 | 0.2681 | 50 | 85 | 131 | 216 |
+| Peso 1.0, agrupado (sin NIT validados) | 0.9003 | 0.2514 | 46 | 84 | 122 | 214 |
+| Peso 0.5, agrupado | 0.9007 | 0.2633 | 48 | 87 | 125 | 213 |
+
+Diferencias contra la base con bootstrap pareado (media e intervalo de confianza al 95%), para el candidato declarado (peso 1.0):
+
+| KPI | Diferencia | IC 95% | Prob. de mejora |
+|---|---|---|---|
+| ROC-AUC | +0.0137 | [+0.0063, +0.0210] | 1.00 |
+| PR-AUC | +0.0066 | [-0.0177, +0.0289] | 0.70 |
+| Precisión top 1% | -0.0130 | [-0.0550, +0.0250] | 0.23 |
+| Recall top 2.5% | +0.0109 | [-0.0220, +0.0421] | 0.73 |
+
+Test reservado (61 positivos): la base tiene ROC-AUC 0.8782, PR-AUC 0.3115 y F1 0.4144. El candidato (peso 1.0) da 0.8957, 0.3055 y 0.4211: el PR-AUC cae 0.0060, más que la tolerancia de 0.005, por lo que G3 no se cumple (el ROC-AUC y el F1 sí quedan dentro de tolerancia). En la zona roja, la base acierta 19 de 40 en el top 1% y el candidato también 19 de 40.
+
+Backtest hacia adelante, evaluado en 2024 -> 2025 sin ninguna fila de 2025 en el entrenamiento:
+
+| Entrenamiento | Positivos | ROC-AUC | PR-AUC | Aciertos top 1% (de 200) | F1 máximo |
+|---|---|---|---|---|---|
+| 1 año (2023 -> 2024) | 344 | 0.8908 | 0.2513 | 83 | 0.3300 |
+| 2 años (2022 -> 2024) | 664 | 0.8926 | 0.2513 | 78 | 0.3390 |
+| 3 años (2021 -> 2024) | 1,028 | 0.8992 | 0.2454 | 78 | 0.3444 |
+
+Resultado de la regla: se cumple solo G1. Fallan G2 (el top 1% baja de 85 a 82 aciertos), G3, G4 (el PR-AUC agrupado, 0.2514, no supera la base, 0.2534) y G5 (el PR-AUC con 3 años, 0.2454, queda por debajo del de 1 año, 0.2513). Decisión automática: no adoptar.
+
+### 11.4 La variante de peso 0.5 y su confirmación independiente
+
+La variante con peso 0.5 se veía mejor, pero se examinó después de ver los resultados de 2024 -> 2025. Adoptarla directamente habría sido elegir al ganador a posteriori. Para resolverlo sin sesgo se replicó el experimento donde ese peso no se había elegido: panel objetivo 2023 -> 2024 (344 positivos) con historia 2021 -> 2022 y 2022 -> 2023 (684 positivos), con una regla declarada antes de ejecutar (`replica_confirmatoria_apilado.py`).
+
+| Variante (panel 2023 -> 2024) | ROC-AUC | PR-AUC | Aciertos top 1% (de 210) | Aciertos top 2.5% (de 523) | Aciertos top 10% (de 2,092) |
+|---|---|---|---|---|---|
+| Base | 0.8975 | 0.2645 | 84 | 145 | 238 |
+| Peso 1.0 | 0.9036 | 0.2773 | 81 | 147 | 246 |
+| Peso 0.5 | 0.9045 | 0.2765 | 85 | 144 | 246 |
+| Peso 0.5, agrupado | 0.9053 | 0.2760 | 81 | 148 | 246 |
+
+Reglas: C1 (PR-AUC mejora y ROC-AUC no cae) se cumple; C3 (la versión agrupada supera la base) se cumple; C2 (zona roja sin empeorar y con mejora estricta) falla porque el top 2.5% baja de 145 a 144 aciertos. El peso 0.5 no se confirma. Se respeta la regla tal como se declaró, sin reinterpretarla a favor del resultado.
+
+### 11.5 Lectura de los resultados
+
+- Lo que sí mejora: la discriminación global. En las diez comparaciones de una variante apilada contra su base, el ROC-AUC de la variante es mayor. El intervalo del bootstrap queda por encima de cero en el OOF (+0.0137 con peso 1.0), en el Test (+0.0178) y en la réplica con peso 0.5 (+0.0068); con peso 1.0 en la réplica el intervalo roza el cero ([-0.0007, +0.0129]). El recall del top 10% también sube en ambos paneles (de 67.8% a 70.4% en 2024 -> 2025 con peso 1.0, y de 69.2% a 71.5% en 2023 -> 2024). La historia ayuda a ordenar mejor el cuerpo de la distribución.
+- Lo que no mejora: la cabeza de la distribución, que es lo que define la zona roja. Los aciertos del top 1% quedan en 82 a 87 contra 85 de la base, y los intervalos del PR-AUC y de la precisión del top 1% incluyen el cero en todos los casos.
+- La cantidad de positivos no parece ser el límite del extremo superior, aunque la evidencia sobre cuántos años de historia conviene no es consistente entre años. Un modelo entrenado solo con 2023 -> 2024 (344 positivos, sin ninguna fila de 2025) rinde en 2024 -> 2025 lo mismo que el OOF del modelo vigente (PR-AUC 0.2513 contra 0.2534), y pasar de 1 a 3 años de historia no mejora el PR-AUC (-0.0058, IC 95% [-0.0249, +0.0104]) ni el top 1% (de 83 a 78 aciertos). En la réplica evaluada en 2023 -> 2024, en cambio, pasar de 1 a 2 años de historia sí mejora de forma clara: PR-AUC +0.0306 (IC 95% [+0.0140, +0.0507]) y precisión del top 1% +5.8 puntos (IC 95% [+1.4, +10.3]), con 82 aciertos de 210 contra 68. Esa comparación parte de un modelo de un solo año de historia (320 positivos) más débil que el OOF de su propio panel (PR-AUC 0.2250 contra 0.2645), y la ganancia no reaparece cuando la historia se suma a un panel que ya se entrena con datos del mismo año (tablas de 11.3 y 11.4), que es la situación de producción. La lectura prudente es que más filas no resuelven por sí solas la zona roja y que la señal sobre el número de años de historia es ruidosa.
+- Con 61 positivos en el Test, los intervalos de confianza del bootstrap son muy anchos (PR-AUC de aproximadamente -0.06 a +0.06 y precisión del top 1% de -7.5 a +12.5 puntos para el candidato de peso 1.0), así que ninguna de esas mejoras aparentes se puede distinguir del azar. Por eso se decidió con el OOF de 304 positivos y con la réplica, no con el Test.
+
+### 11.6 Decisión y qué queda disponible
+
+No se aplica. La regla declarada de antemano no se cumple, la variante alternativa no se confirmó en una réplica independiente, y el beneficio observable es de discriminación global, no de la zona roja que motivó el pedido. Mantener el modelo vigente cumple la regla de no retroceder: ROC-AUC 0.8782, PR-AUC 0.3115 y F1 0.4144 en el Test, y ROJO ÉLITE con 40 empresas, 47.5% de tasa de quiebra y lift 31x, sin cambios.
+
+Queda construido y documentado, sin costo para producción: los maestros históricos, los saldos t-1 y las tres transiciones, más los dos módulos de análisis, que se pueden volver a ejecutar para reevaluar cuando haya más positivos (por ejemplo al incorporar el corte 2026). Si el objetivo pasa a ser la discriminación global (ROC-AUC) en vez de la zona roja, la historia apilada (con peso 0.5 o 1.0) es una candidata razonable, pero debería evaluarse con una regla de adopción propia, declarada antes de ejecutar, y asumiendo el costo de reentrenar con 62 mil filas adicionales.
+
+Lo que sí podría mover la zona roja, dado que la cantidad de positivos no es el límite, es aportar información nueva en vez de más filas: ampliar la definición de positivo (`y_integral`, `Flag_Default_Sin_Efectivo`), incorporar más anexos del SIIS que hoy no se usan (flujos de efectivo, notas de ingresos y de propiedad, planta y equipo) o rediseñar variables para empresas ya en deterioro.
+
+### 11.7 Reproducibilidad
+
+- `cd fase5_optimizacion && /projects/sandbox/.venv_fase5/bin/python analisis_apilado_transiciones.py` regenera `salidas/analisis_apilado_transiciones.json` (unos 15 minutos). Con `APILADO_SMOKE=1` hace una prueba rápida de 3 minutos con 20 árboles y 2 pliegues, que sirve para depurar el código pero no para decidir.
+- `/projects/sandbox/.venv_fase5/bin/python replica_confirmatoria_apilado.py` regenera `salidas/confirmacion_v2.json` (unos 7 minutos).
+- `/projects/sandbox/.venv_fase5/bin/python control_deriva_maestros.py` regenera `salidas/control_deriva_maestros.json`, que respalda las cifras de deriva de la sección 11.1.
+- Los dos módulos de análisis guardan en `salidas/cache_apilado.pkl` y `salidas/cache_confirmacion.pkl` las predicciones ya calculadas para poder reanudar si se interrumpen. Esas cachés no se versionan (están en `.gitignore`); si se modifica el código o los datos hay que borrarlas antes de volver a ejecutar, o el módulo reutilizará resultados antiguos.
+- Si faltan los `prev_*.pkl`, `analisis_apilado_transiciones.py` los regenera desde los anexos del SIIS (unos 30 segundos por año).
+- Ambos módulos aseveran la integridad del panel (19,937 empresas y 304 positivos, 15,949 y 243 en entrenamiento, 3,988 y 61 en Test), la ausencia de nulos y la ausencia de columnas de t+1 en X. Nada bajo `py/` ni `SIIS/` fue modificado.

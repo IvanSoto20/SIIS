@@ -1,3 +1,6 @@
 # Artefactos de compilación de Python (no se versionan)
 __pycache__/
 *.pyc
+
+# Cachés de predicciones de los módulos de análisis (se regeneran; ver informe sección 11.7)
+salidas/cache_*.pkl

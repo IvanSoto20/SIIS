@@ -1,0 +1,26 @@
+====================================================================================================
+REPLICACION CONFIRMATORIA: panel objetivo 2023->2024, historia 2021->22 y 2022->23
+====================================================================================================
+Cargando saldos anteriores desde caché: prev_2023.pkl
+  Transicion 2021->2022: sanas_t=21,393 | panel=19,828 | positivos=364 (1.836%) [legal=149, patrimonial=223]
+  Transicion 2022->2023: sanas_t=22,819 | panel=21,523 | positivos=320 (1.487%) [legal=135, patrimonial=190]
+  Transicion 2023->2024: sanas_t=22,855 | panel=20,911 | positivos=344 (1.645%) [legal=141, patrimonial=215]
+  Panel objetivo 2023->2024: 20,911 empresas, 344 positivos | historia: 41,351 filas, 684 positivos
+    [base] 52s
+    base                   ROC 0.8975 | PR 0.2645 | F1max 0.3566 | top1%: 84/210 | top2.5%: 145/523 | top10%: 238/2092
+    [V1_peso1.0] 123s
+    V1_peso1.0             ROC 0.9036 | PR 0.2773 | F1max 0.3533 | top1%: 81/210 | top2.5%: 147/523 | top10%: 246/2092
+    [V2_peso0.5] 123s
+    V2_peso0.5             ROC 0.9045 | PR 0.2765 | F1max 0.3522 | top1%: 85/210 | top2.5%: 144/523 | top10%: 246/2092
+    [V2g_peso0.5_agrupado] 108s
+    V2g_peso0.5_agrupado   ROC 0.9053 | PR 0.2760 | F1max 0.3516 | top1%: 81/210 | top2.5%: 148/523 | top10%: 246/2092
+
+====================================================================================================
+CONFIRMACION
+  CUMPLE  C1_pr_mejora_y_roc_no_cae
+  FALLA   C2_zona_roja_no_empeora_y_mejora
+  CUMPLE  C3_agrupado_supera_base
+  ==> V2 CONFIRMADA: False
+
+Guardado confirmacion_v2.json (435.9 s)
+FIN exit=0

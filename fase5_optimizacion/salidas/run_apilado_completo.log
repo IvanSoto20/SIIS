@@ -1,0 +1,58 @@
+====================================================================================================
+ANALISIS DE LA ESTRATEGIA 'APILAR TRANSICIONES HISTORICAS'
+====================================================================================================
+Cargando saldos anteriores desde caché: prev_2023.pkl
+
+Construyendo transiciones historicas (misma representacion de 90 variables)...
+  Transicion 2021->2022: sanas_t=21,393 | panel=19,828 | positivos=364 (1.836%) [legal=149, patrimonial=223]
+  Transicion 2022->2023: sanas_t=22,819 | panel=21,523 | positivos=320 (1.487%) [legal=135, patrimonial=190]
+  Transicion 2023->2024: sanas_t=22,855 | panel=20,911 | positivos=344 (1.645%) [legal=141, patrimonial=215]
+  Historia apilada: 62,262 filas | 1028 positivos (el panel 2024->2025 aporta 304) -> x4.38 positivos
+
+[NIVEL 1] Backtest hacia adelante: evaluacion en 2024->2025 SIN usar ninguna fila de 2025
+    [fwd2025::F1_1anio_2023] listo en 12s
+    F1_1anio_2023          pos_train= 344 | ROC 0.8908 | PR 0.2513 | TP top1%: 83/200 | F1max 0.3300
+    [fwd2025::F2_2anios_2022_2023] listo en 19s
+    F2_2anios_2022_2023    pos_train= 664 | ROC 0.8926 | PR 0.2513 | TP top1%: 78/200 | F1max 0.3390
+    [fwd2025::F3_3anios_2021_2023] listo en 26s
+    F3_3anios_2021_2023    pos_train=1028 | ROC 0.8992 | PR 0.2454 | TP top1%: 78/200 | F1max 0.3444
+    [fwd2024::R1_1anio_2022] listo en 12s
+    (replica 2023->24) R1_1anio_2022        | ROC 0.8887 | PR 0.2250 | TP top1%: 68/210
+    [fwd2024::R2_2anios_2021_2022] listo en 19s
+    (replica 2023->24) R2_2anios_2021_2022  | ROC 0.8994 | PR 0.2558 | TP top1%: 82/210
+
+[NIVEL 2a] Test reservado del PISO (3,988 empresas, 61 positivos)
+    [split::V0_base] listo en 10s
+    V0_base                | ROC 0.8782 | PR 0.3115 | F1max 0.4144 | TP top1%: 19/40
+    [split::V1_apilado_peso1.0] listo en 31s
+    V1_apilado_peso1.0     | ROC 0.8957 | PR 0.3055 | F1max 0.4211 | TP top1%: 19/40
+    [split::V2_apilado_peso0.5] listo en 32s
+    V2_apilado_peso0.5     | ROC 0.8929 | PR 0.3183 | F1max 0.4407 | TP top1%: 19/40
+    [split::V1g_apilado_agrupado] listo en 28s
+    V1g_apilado_agrupado   | ROC 0.8931 | PR 0.3131 | F1max 0.4423 | TP top1%: 20/40
+
+[NIVEL 2b y 3] OOF de 5 pliegues sobre 19,937 empresas (304 positivos)
+    [oof::V0_base] listo en 50s
+    V0_base                | ROC 0.8867 | PR 0.2534 | F1max 0.3531 | TP top1%: 85/200 | TP top2.5%: 124/499
+    [oof::V1_apilado_peso1.0] listo en 158s
+    V1_apilado_peso1.0     | ROC 0.9002 | PR 0.2621 | F1max 0.3577 | TP top1%: 82/200 | TP top2.5%: 128/499
+    [oof::V1g_apilado_agrupado] listo en 139s
+    V1g_apilado_agrupado   | ROC 0.9003 | PR 0.2514 | F1max 0.3466 | TP top1%: 84/200 | TP top2.5%: 122/499
+    [oof::V2_apilado_peso0.5] listo en 159s
+    V2_apilado_peso0.5     | ROC 0.9010 | PR 0.2681 | F1max 0.3610 | TP top1%: 85/200 | TP top2.5%: 131/499
+    [oof::V2g_apilado_agrupado] listo en 138s
+    V2g_apilado_agrupado   | ROC 0.9007 | PR 0.2633 | F1max 0.3630 | TP top1%: 87/200 | TP top2.5%: 125/499
+
+  Arnes validado: la base reproduce los numeros publicados del PISO.
+
+====================================================================================================
+DECISION
+  CUMPLE  G1_oof_pr_mejora_y_roc_no_cae
+  FALLA   G2_zona_roja_oof_no_empeora_y_mejora
+  FALLA   G3_test_publicado_dentro_de_tolerancia
+  FALLA   G4_agrupado_sigue_superando_base
+  FALLA   G5_backtest_3anios_ge_1anio
+  ==> ADOPTAR POR DEFECTO: False
+
+Resultados en analisis_apilado_transiciones.json (906.1 s)
+FIN exit=0
