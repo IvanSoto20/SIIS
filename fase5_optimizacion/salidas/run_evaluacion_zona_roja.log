@@ -1,0 +1,25 @@
+====================================================================================================
+EVALUACION HONESTA DE LA ZONA ROJA (FEAT-004): 4 VARIANTES
+====================================================================================================
+
+[PANEL] Reconstruyendo el panel del PISO (sin anexos)...
+Cargando saldos anteriores desde caché: prev_2023.pkl
+  Panel: 19,937 empresas x 90 features | positivos=304 | train=15,949/243 | test=3,988/61
+
+[PANEL] Reconstruyendo el panel con FEATURES DE ANEXOS activas (bandera en runtime)...
+Cargando saldos anteriores desde caché: prev_2023.pkl
+  Panel con anexos: 19,937 x 106 features (16 columnas de anexos extra).
+
+[VARIANTE base] OOF y Test del ensamble plano (reproduccion del PISO)...
+  OOF  -> ROC 0.8867 PR 0.2534 | top0.5% 50/100 top1% 85/200 top2.5% 124/499 F1max 0.3531
+  TEST -> ROC 0.8782 PR 0.3115 | top0.5% 12/20 top1% 19/40 top2.5% 27/100 F1max 0.4144
+  GATE DE MONTAJE superado: el arnes reproduce el PISO en OOF y Test.
+
+[VARIANTE anexos] OOF y Test del ensamble plano sobre X con 16 features de anexos...
+  OOF  -> ROC 0.8859 PR 0.2544 | top0.5% 50/100 top1% 82/200 top2.5% 125/499 F1max 0.3546
+  TEST -> ROC 0.8809 PR 0.3003 | top0.5% 12/20 top1% 19/40 top2.5% 28/100 F1max 0.4038
+
+[VARIANTE cascada] Barrido de PERCENTIL_COLA sobre X del PISO (sin anexos)...
+      [cascada::oof::pc80.0] OOF listo en 350s
+      [cascada::test::pc80.0] Test listo en 71s
+    cascada pc= 80.0 | OOF ROC 0.8859 PR 0.2461 top0.5% 46/100 top1% 82/200 top2.5% 122/499 | TEST top0.5% 12/20 top1% 19/40 F1max 0.4000

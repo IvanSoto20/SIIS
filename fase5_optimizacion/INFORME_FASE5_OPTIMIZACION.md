@@ -5,6 +5,8 @@ Pipeline activo: `script_cinco_optimizado.py` (90 características seleccionadas
 Módulos de análisis: `analisis_tendencias_y_seleccion.py` (colinealidad), `datos_multianio.py` (capa de datos plurianual), `features_multianio.py` (features de tendencia 2020..2024), `analisis_multianio.py` (ablación multi-año)
 Demo de producto: `demo_entrada_parcial.py` (predicción con datos incompletos)
 Evaluación de transiciones históricas (sección 13): `maestros_historicos.py`, `control_deriva_maestros.py`, `analisis_apilado_transiciones.py`, `replica_confirmatoria_apilado.py`
+Zona roja: anexos y cascada (sección 14): `features_anexos.py` (16 variables de 520000/801500/801700), `modelo_cascada.py` (cascada de dos etapas), `evaluacion_zona_roja.py` (banco de pruebas honesto y decisión); artefactos `salidas/evaluacion_zona_roja.json`, `salidas/evaluacion_zona_roja_base.json`
+Guía de uso del producto: `COMO_USAR_EL_MODELO.md` (cómo puntuar una empresa, interpretar el output y leer la efectividad en lenguaje natural)
 Artefactos regenerados en `salidas/`: `reporte_fase5.json`, `modelo_final_2026.joblib`, `semaforo_2026.csv`, `run_final_multianio.log`, `diagnostico_multianio.json`, `series_saldos_multianio.pkl`, `analisis_multianio.json`, `demo_entrada_parcial.json`, `run_demo_entrada_parcial.log`
 
 Este informe cierra el ciclo de optimización de la Fase 5. Documenta de forma didáctica tres preguntas que planteó el usuario y las respuestas obtenidas con evidencia cuantitativa, citando las funciones de `pandas`, `numpy`, `scipy` y `scikit-learn` que sustentan cada decisión. Todo el trabajo respeta la restricción autoritativa de cero fuga de datos: ninguna variable derivada de 2025 entra en la matriz predictora `X`, y la variable objetivo `y` se deriva exclusivamente de columnas `*_2025` que nunca son features.
@@ -408,3 +410,76 @@ Lo que sí podría mover la zona roja, dado que la cantidad de positivos no es e
 - Los dos módulos de análisis guardan en `salidas/cache_apilado.pkl` y `salidas/cache_confirmacion.pkl` las predicciones ya calculadas para poder reanudar si se interrumpen. Esas cachés no se versionan (están en `.gitignore`); si se modifica el código o los datos hay que borrarlas antes de volver a ejecutar, o el módulo reutilizará resultados antiguos.
 - Si faltan los `prev_*.pkl`, `analisis_apilado_transiciones.py` los regenera desde los anexos del SIIS (unos 30 segundos por año).
 - Ambos módulos aseveran la integridad del panel (19,937 empresas y 304 positivos, 15,949 y 243 en entrenamiento, 3,988 y 61 en Test), la ausencia de nulos y la ausencia de columnas de t+1 en X. Nada bajo `py/` ni `SIIS/` fue modificado.
+
+## 14. Subir la zona roja con anexos nuevos y una cascada de dos etapas (evaluada y NO aplicada)
+
+Esta sección documenta la última tanda de trabajo: dos palancas pensadas para subir la efectividad de la ZONA ROJA del modelo (el pequeño grupo de empresas marcadas como más peligrosas) y la evaluación honesta que decidió si adoptarlas. El resultado anticipado, para no perder al lector: NINGUNA de las dos palancas pasó la regla de adopción declarada de antemano, de modo que las dos quedan disponibles tras banderas apagadas y los artefactos de producción (`reporte_fase5.json`, `modelo_final_2026.joblib`, `semaforo_2026.csv`) se conservan INTACTOS en el PISO publicado.
+
+Módulos nuevos: `features_anexos.py` (palanca 1), `modelo_cascada.py` (palanca 2) y `evaluacion_zona_roja.py` (banco de pruebas y decisión). Artefactos nuevos en `salidas/`: `evaluacion_zona_roja.json` (veredicto completo), `evaluacion_zona_roja_base.json` (reproducción del PISO del arnés), `run_evaluacion_zona_roja_full.log` y `cache_evaluacion_zona_roja.pkl` (caché de scores OOF y Test para reanudar rápido).
+
+### 14.1 Palanca 1: integrar anexos no explotados (`features_anexos.py`)
+
+El pipeline base usa los anexos 210030 (balance) y 310030 (resultados). La palanca 1 suma información de tres anexos que hasta ahora no entraban en el modelo, todos del corte 2024 (nunca 2025, para no romper el anti-fuga del modelo 2024 -> 2025):
+
+- 520000 (estado de flujos de efectivo, método indirecto): señales granulares de generación o consumo de caja (flujo operativo, de inversión y de financiación, y su relación con pasivos y activos).
+- 801500 (deterioro de activos): pérdidas por deterioro reconocidas, un indicador directo de activos que están perdiendo valor.
+- 801700 (otras provisiones y pasivos contingentes): provisiones y contingencias que anticipan salidas de caja futuras.
+
+De esos tres anexos se derivaron 16 variables nuevas con el mismo blindaje numérico del resto del pipeline (`division_segura`, `.clip()`, `np.log1p` donde aplica, imputación neutral cuando una empresa no reporta el anexo). Con la palanca activa la matriz `X` pasa de 90 a 106 columnas. La cobertura es parcial por naturaleza: no todas las empresas reportan los tres anexos, por eso las variables se imputan de forma neutral y se marca su ausencia, coherente con el diseño de entrada parcial de la sección 10.
+
+### 14.2 Palanca 2: modelo en cascada de dos etapas (`modelo_cascada.py`)
+
+La idea de la cascada es especializar el modelo en la cola de riesgo. En vez de un único ensamble plano, se encadenan dos etapas con un score único calibrado en [0, 1]:
+
+- Etapa 1 (filtro general): el ensamble del PISO puntúa a toda la población y define una cola de riesgo, las empresas por encima del percentil `PERCENTIL_COLA`.
+- Etapa 2 (especialista en la cola): un segundo ensamble, entrenado para separar quiebras dentro de esa cola, re-puntúa a las empresas de la cola. Los scores de ambas etapas se combinan de forma monótona (`combinar_scores`) para que el ranking global siga siendo coherente y el número siga siendo una probabilidad en [0, 1].
+
+El hiperparámetro `PERCENTIL_COLA` (qué tan ancha es la cola que hereda la etapa 2) se trató como un parámetro a barrer. Para no elegir ganador a posteriori, el valor se decide mirando SOLO la OOF o el entrenamiento, nunca el Test reservado.
+
+### 14.3 La regla de adopción, declarada ANTES de ver resultados
+
+Siguiendo el mismo rigor de las secciones 9 y 13, la regla se fijó en el encabezado de `evaluacion_zona_roja.py` antes de correr nada. Una variante se adopta por defecto SOLO si cumple los cuatro gates:
+
+- G1 (no regresión OOF): PR-AUC de la variante >= PR-AUC base menos 0.005, y ROC-AUC de la variante >= ROC-AUC base menos 0.002.
+- G2 (mejora de la zona roja OOF): los verdaderos positivos en el top 1% (o el top 0.5%) de la variante son ESTRICTAMENTE más que la base, sin caer en el top 2.5%. Este es el objetivo del usuario: detectar más quiebras en el grupo más pequeño.
+- G3 (no regresión en el Test reservado): el F1 máximo no cae más de 0.005 por debajo del PISO y los verdaderos positivos del rojo élite (top 1%, 40 alertas) no caen más de 1 respecto al PISO.
+- G4 (respaldo estadístico): en el bootstrap pareado de 500 remuestreos, la probabilidad de mejora en PR-AUC, o en recall del top 2.5%, o en precisión del top 1%, es al menos 0.60.
+
+En empate o ambigüedad NO se adopta. El PISO es un suelo intocable. El arnés primero REPRODUCE el PISO (gate de montaje) y solo entonces compara: OOF ROC 0.8867 / PR 0.2534, top 1% 85/200; Test ROC 0.8782 / PR 0.3115, rojo élite 19/40, F1 máximo 0.4144. La reproducción fue exacta, lo que valida que las comparaciones son parejas.
+
+### 14.4 Evaluación honesta con intervalos de confianza
+
+Protocolo idéntico al de las tandas previas: OOF de 5 pliegues (`StratifiedKFold` con `shuffle=True` y `random_state=42`) sobre las 19,937 empresas, Test reservado de 3,988 empresas (61 positivos) con el mismo `train_test_split` estratificado, y bootstrap pareado de 500 remuestreos. Se midieron explícitamente los cortes top 0.5 / 1.0 / 2.5 por ciento y el F1 máximo. Por la restricción autoritativa de tiempo de reloj del usuario, el barrido de `PERCENTIL_COLA` del arnés completo se acotó al valor base 88 (una prueba de humo previa ya había recorrido las colas 80 a 92 sin encontrar una que subiera el top 1% OOF); se conservaron intactos los cinco pliegues OOF, el Test reservado y los 500 remuestreos del bootstrap, que son lo que da rigor a la decisión.
+
+Resultados sobre el top 1% y el F1 máximo (CON vs el PISO):
+
+| Variante | top 1% OOF (TP/200) | ROC OOF | PR OOF | rojo élite Test (TP/40) | F1 máx. Test |
+|----------|----------------------|---------|--------|--------------------------|---------------|
+| base (PISO) | 85 | 0.8867 | 0.2534 | 19 | 0.4144 |
+| anexos | 82 | 0.8859 | 0.2544 | 19 | 0.4038 |
+| cascada (cola 88) | 84 | 0.8862 | 0.2527 | 17 | 0.4107 |
+| anexos + cascada (cola 88) | 85 | 0.8858 | 0.2496 | 16 | 0.4000 |
+
+Bootstrap pareado contra la base (probabilidad de mejora, un valor por encima de 0.5 indica que la variante tiende a ganar):
+
+- anexos: PR-AUC 0.548, recall top 2.5% 0.610, precisión top 1% 0.126. La subida de PR-AUC es marginal y el intervalo de confianza del 95% cruza el cero.
+- cascada: PR-AUC 0.400, recall top 2.5% 0.410, precisión top 1% 0.366. Ningún KPI supera 0.5.
+- anexos + cascada: PR-AUC 0.234, recall top 2.5% 0.218, precisión top 1% 0.558. Solo la precisión del top 1% roza la mitad.
+
+### 14.5 Veredicto de los gates y decisión final
+
+| Variante | G1 | G2 | G3 | G4 | Adoptar |
+|----------|----|----|----|----|---------|
+| anexos | OK | NO | NO | OK | No |
+| cascada | OK | NO | NO | NO | No |
+| anexos + cascada | OK | NO | NO | NO | No |
+
+Lectura:
+
+- Ninguna variante mejora el objetivo del usuario (G2): anexos baja el top 1% OOF de 85 a 82, la cascada a 84, y la combinación lo iguala en 85 pero sin superarlo estrictamente, de modo que no gana el gate.
+- Ninguna variante preserva el PISO en el Test reservado (G3): el F1 máximo cae por debajo del umbral de ruido (anexos 0.4038, combinación 0.4000) y los verdaderos positivos del rojo élite caen (cascada 17, combinación 16) frente a los 19 del PISO.
+- El respaldo estadístico (G4) solo se cumple débilmente para anexos, y aun así anexos falla G2 y G3.
+
+Por tanto la DECISIÓN final, coherente con la regla declarada de antemano y no con la intuición, es NO adoptar ninguna variante. `USAR_FEATURES_ANEXOS` y `USAR_CASCADA` quedan en `False` por defecto, el código y las banderas se conservan para reactivarlos si en el futuro cambia la evidencia, y los tres artefactos de producción NO se tocaron (siguen reproduciendo el PISO: Test ROC 0.8782 / PR 0.3115 / F1 0.4144, rojo élite 40 empresas con 19 quiebras, 47.5 por ciento, lift 31.05). La demostración de entrada parcial (`demo_entrada_parcial.py`) sigue corriendo sin cambios.
+
+Interpretación honesta del resultado, consistente con la sección 13: el límite para subir la zona roja no parece ser la falta de filas ni la falta de un modelo más sofisticado, sino la información disponible. Los anexos añadidos tienen cobertura parcial y aportan señal marginal que no se traduce en más quiebras detectadas en la cola; la cascada reorganiza el ranking de la cola sin aumentar su contenido de verdaderos positivos. El PISO publicado sigue siendo la mejor configuración verificada.

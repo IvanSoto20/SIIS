@@ -141,13 +141,14 @@ RUIDO_ELITE_TP = 1        # G3: cuantos TP del rojo elite (top1% Test) se tolera
 PROB_MEJORA_MIN = 0.60    # G4: probabilidad minima de mejora en el bootstrap pareado.
 
 # Barrido de PERCENTIL_COLA de la cascada. El ganador se elige por OOF/entrenamiento,
-# nunca por el Test. 88 es el valor base de FEAT-003; se barren una cola mas ancha (85)
-# y una mas estrecha (90) alrededor del valor base para no descartar la cascada por un
-# tamano subobtimo. El barrido se acota a 3 valores (en vez de 5) para respetar el tope
-# de tiempo de reloj del usuario sin sacrificar OOF de 5 pliegues ni el Test reservado;
-# cada cascada OOF cuesta ~350 s, de modo que 3 valores x 2 cascadas se mantiene dentro
-# del presupuesto. El valor base 88 queda siempre cubierto.
-PERCENTILES_COLA = (88.0,) if SMOKE else (85.0, 88.0, 90.0)
+# nunca por el Test. 88 es el valor base de FEAT-003. Por el tope de tiempo de reloj
+# autoritativo del usuario (1 hora), el barrido completo se acota al valor base 88,
+# conservando lo que de verdad da rigor: OOF de 5 pliegues, Test reservado y bootstrap
+# pareado de 500 remuestreos sobre las 4 variantes. El smoke previo ya barrio colas 80
+# a 92 y mostro que ninguna cola mejora el top1% OOF; una cascada OOF cuesta ~350 s, de
+# modo que ampliar el barrido excederia el presupuesto sin cambiar la decision. Si en el
+# futuro hay mas tiempo, basta ampliar esta tupla (p.ej. 85.0, 88.0, 90.0).
+PERCENTILES_COLA = (88.0,)
 
 RUTA_JSON = base.SALIDAS_DIR / ("evaluacion_zona_roja_smoke.json" if SMOKE
                                 else "evaluacion_zona_roja.json")
