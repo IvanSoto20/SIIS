@@ -325,6 +325,7 @@ def construir_matriz_caracteristicas(
     df_saldos_prev: pd.DataFrame,
     series_multianio: dict = None,
     anio_t: int = None,
+    validar_totales_no_nulos: bool = False,
 ) -> pd.DataFrame:
     """
     Genera la matriz predictora X para un corte temporal t integrando:
@@ -397,6 +398,42 @@ def construir_matriz_caracteristicas(
     ebit = df["Ganancia (pérdida) por actividades de operación (GananciaPerdidaPorActividadesDeOperacion)"].fillna(0).astype(float)
     flujo_op = df["Flujos de efectivo netos procedentes de (utilizados en) actividades de operación (CashFlowsFromUsedInOperatingActivities)"].fillna(0).astype(float)
     costos_fin = df["Costos financieros (FinanceCosts)"].fillna(0).clip(lower=0).astype(float)
+
+    # GUARDA DE INVARIANTE DE NO-REGRESION (v3): el ``.fillna(0)`` sobre los totales
+    # estructurales y el nucleo del estado de resultados es un salvavidas para la
+    # ENTRADA PARCIAL (empresa que aporta solo los datos que tiene). Para el modelo de
+    # produccion esa imputacion debe ser INOCUA: si los paneles reales no tienen NaN en
+    # esas 12 columnas, el PISO se conserva byte a byte. Esta guarda hace EXPLICITA y
+    # AUTO-VERIFICABLE esa invariante: cuando ``validar_totales_no_nulos`` es True (lo
+    # activan las rutas de entrenamiento y proyeccion del pipeline, NO la demo ni la
+    # inferencia de entrada parcial), se asevera que el DataFrame de entrada no trae
+    # NaN en esas columnas antes de la imputacion. Asi, si un panel futuro introdujera
+    # NaN ahi, el pipeline FALLA de forma ruidosa en lugar de mover el PISO en silencio.
+    # (pandas.Series.isna marca NaN elemento a elemento; .sum() cuenta los True.)
+    if validar_totales_no_nulos:
+        columnas_totales_criticas = [
+            "Total de activos (Assets)",
+            "Total pasivos (Liabilities)",
+            "Patrimonio total (Equity)",
+            "Activos corrientes totales (CurrentAssets)",
+            "Pasivos corrientes totales (CurrentLiabilities)",
+            "Efectivo y equivalentes al efectivo (CashAndCashEquivalents)",
+            "Ingresos de actividades ordinarias (Revenue)",
+            "Ganancia (pérdida) (ProfitLoss)",
+            "Ganancia (pérdida) por actividades de operación (GananciaPerdidaPorActividadesDeOperacion)",
+            "Flujos de efectivo netos procedentes de (utilizados en) actividades de operación (CashFlowsFromUsedInOperatingActivities)",
+            "Costos financieros (FinanceCosts)",
+        ]
+        nulos_criticos = {
+            c: int(df[c].isna().sum())
+            for c in columnas_totales_criticas
+            if c in df.columns and int(df[c].isna().sum()) > 0
+        }
+        assert not nulos_criticos, (
+            "ALERTA NO-REGRESION: se detectaron NaN en totales estructurales del panel de "
+            f"entrenamiento/proyeccion: {nulos_criticos}. La imputacion-neutral .fillna(0) "
+            "dejaria de ser inocua y podria mover el PISO en silencio. Revisar la fuente."
+        )
 
     cxp_vencidas = df["Total obligaciones vencidas [miembro] (CxPTotalObligacionesVencidasMiembro)"].fillna(0).clip(lower=0).astype(float)
     cxp_360 = df["Valor obligaciones vencidas de mas de 360 días [miembro] (CxPObligacionesVencidasMasDeTrescientossesentaDiasMiembro)"].fillna(0).clip(lower=0).astype(float)
@@ -646,7 +683,8 @@ def construir_panel_y_splits():
     # Construcción de X estrictamente con datos de 2024 e historia 2023 (0 fuga de 2025)
     columnas_2024_puras = [c for c in df_2024_sanas.columns]
     X = construir_matriz_caracteristicas(
-        panel[columnas_2024_puras], prev_2023, series_multianio=series_multianio, anio_t=2024
+        panel[columnas_2024_puras], prev_2023, series_multianio=series_multianio, anio_t=2024,
+        validar_totales_no_nulos=True,
     )
     assert not any("2025" in str(col) for col in X.columns), "ALERTA CRÍTICA: Fuga de datos detectada en X."
 
@@ -923,7 +961,8 @@ def proyectar_semaforo_2026(X_completo, y_completo, df_2025):
         series_multianio_proy = construir_series_saldos_multianio(usar_cache=True)
 
     X_2025 = construir_matriz_caracteristicas(
-        df_2025_sanas, prev_2024, series_multianio=series_multianio_proy, anio_t=2025
+        df_2025_sanas, prev_2024, series_multianio=series_multianio_proy, anio_t=2025,
+        validar_totales_no_nulos=True,
     )[X_completo.columns]
     assert X_2025.isnull().sum().sum() == 0, "Nulos detectados en matriz 2025"
 
