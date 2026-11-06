@@ -4,6 +4,7 @@ DEMO DE ENTRADA PARCIAL (FEAT-006): prediccion con datos incompletos
 Bandera USAR_FEATURES_MULTIANIO vigente en el pipeline: False
 Modelo cargado: 4 modelos, 90 features, calibrador=IsotonicRegression.
 Cargando saldos anteriores desde caché: prev_2024.pkl
+Cargando series multi-anuales desde cache: series_saldos_multianio.pkl
 
 [CASO A] cuentas faltantes + sin historia plurianual
   NIT                : DEMO-PARCIAL-SIN-HISTORIA-0001
@@ -26,8 +27,34 @@ Cargando saldos anteriores desde caché: prev_2024.pkl
   Prob. calibrada    : 0.013158 (en [0,1]: True)
   Zona semaforo      : 1. VERDE (Estable / Sano)
 
+[CASO D] balance incompleto: totales estructurales ausentes
+  NIT                : 800000276
+  Cuentas faltantes  : 4
+  Score ensamble     : 0.036478
+  Prob. calibrada    : 0.007299 (en [0,1]: True)
+  Zona semaforo      : 1. VERDE (Estable / Sano)
+
+------------------------------------------------------------------------------------------
+EVIDENCIA FORZADA DE LA RUTA MULTI-ANUAL (construir_features_multianio)
+------------------------------------------------------------------------------------------
+
+[RUTA MULTI-ANUAL - CASO A] sin historia plurianual
+  Anios_Historia_Disponible : 0 (ventana plena=4)
+  Flag_Sin_Historia_3A      : 1
+  Flag_Historia_Parcial     : 0
+  Prob. calibrada (ruta MA) : 0.017816 (en [0,1]: True)
+  construir_features_multianio ejercido SIN excepcion: True
+
+[RUTA MULTI-ANUAL - CASO B] historia parcial (solo 2023 y 2024)
+  Anios_Historia_Disponible : 2 (ventana plena=4)
+  Flag_Sin_Historia_3A      : 0
+  Flag_Historia_Parcial     : 1
+  Prob. calibrada (ruta MA) : 0.008264 (en [0,1]: True)
+  construir_features_multianio ejercido SIN excepcion: True
+
 ==========================================================================================
 Evidencia guardada en: /projects/sandbox/SIIS/fase5_optimizacion/salidas/demo_entrada_parcial.json
-Casos evaluados: 3 | Todos con probabilidad en [0,1]: True
+Casos evaluados (ruta produccion): 4 | Todos con prob en [0,1]: True
+Casos evaluados (ruta multi-anual forzada): 2 | Todos con prob en [0,1]: True
 Demo de entrada parcial completada con exito.
 ==========================================================================================

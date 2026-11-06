@@ -297,10 +297,26 @@ def construir_features_multianio(
     end_t1 = endeudamiento_de(anio_t - 1)
     end_t2 = endeudamiento_de(anio_t - 2)
     if end_t1 is not None and end_t2 is not None:
-        # Imputacion neutral: donde falte un tramo, la variacion de ese tramo es 0.
-        delta_1 = end_t - np.where(np.isnan(end_t1), end_t, end_t1)
-        delta_2 = np.where(np.isnan(end_t1), 0.0, end_t1) - np.where(np.isnan(end_t2), np.where(np.isnan(end_t1), 0.0, end_t1), end_t2)
-        accel = np.clip(np.nan_to_num(delta_1 - delta_2, nan=0.0), -2.0, 2.0)
+        # La aceleracion es una SEGUNDA diferencia:
+        #   accel = (end_t - end_{t-1}) - (end_{t-1} - end_{t-2})
+        # y por definicion necesita los DOS tramos extremos (t-1 y t-2) para existir.
+        # CORRECCION HALLAZGO #3 (simetria de la imputacion-neutral): si falta
+        # CUALQUIERA de los dos extremos (end_{t-1} o end_{t-2}), la segunda
+        # diferencia NO es observable y se fija estrictamente a 0.0 (variacion
+        # neutra), respetando la promesa de "variacion neutra cuando falta el dato".
+        # Antes, cuando faltaba t-1 pero existia t-2, quedaba un residuo no-neutral
+        # (+end_{t-2}); ahora la mascara de validez satura esa fila a 0.0.
+        #
+        # numpy.isnan devuelve una mascara booleana por elemento (documentacion de
+        # NumPy: "Test element-wise for NaN"); el operador | combina ambas mascaras.
+        falta_tramo = np.isnan(end_t1) | np.isnan(end_t2)
+        delta_1 = end_t - np.nan_to_num(end_t1, nan=0.0)
+        delta_2 = np.nan_to_num(end_t1, nan=0.0) - np.nan_to_num(end_t2, nan=0.0)
+        accel = delta_1 - delta_2
+        # numpy.where selecciona 0.0 donde falte un extremo y el valor calculado en
+        # otro caso; luego nan_to_num y clip blindan el resultado a un rango acotado.
+        accel = np.where(falta_tramo, 0.0, accel)
+        accel = np.clip(np.nan_to_num(accel, nan=0.0), -2.0, 2.0)
         X["Aceleracion_Endeudamiento"] = accel
     else:
         X["Aceleracion_Endeudamiento"] = 0.0

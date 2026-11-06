@@ -208,7 +208,7 @@ Sobre esa serie se construyen once columnas que extienden la filosofía del BLOQ
 | `Pendiente_Patrimonio_3A_Sobre_Activos` | Variación de patrimonio a ~3 años normalizada por activos t. |
 | `Var_Patrimonio_2A_Sobre_Activos` | Variación de patrimonio a ~2 años normalizada por activos t. |
 | `CAGR_Ingresos_Multianio` | Tasa de crecimiento anual compuesta de ingresos en la ventana. |
-| `Aceleracion_Endeudamiento` | Segunda diferencia del endeudamiento (sube cada vez más rápido). |
+| `Aceleracion_Endeudamiento` | Segunda diferencia del endeudamiento (sube cada vez más rápido); 0.0 neutro si falta t-1 o t-2. |
 | `Anios_Con_Perdida_Ventana` | Conteo de años observados con utilidad negativa (incluye t). |
 | `Persistencia_Perdidas_3A` | Fracción de años observados con pérdida (0..1). |
 | `Flag_Deterioro_Patrimonial_Sostenido` | 1 si el patrimonio cae respecto al año inicial con al menos 2 años de historia. |
@@ -222,6 +222,8 @@ Estrategia de faltantes (decidida POR COLUMNA y documentada): se usa IMPUTACIÓN
 
 El blindaje numérico reutiliza `division_segura` (protección contra división por cero, NaN e infinitos con `.clip()` y `numpy.nan_to_num`) y los acotamientos del pipeline. La función `validar_sin_fuga_multianio` asevera que ningún año empleado supera a `anio_t` y, en particular, que jamás se toca 2025 en el modelo 2024 -> 2025.
 
+Corrección de simetría en `Aceleracion_Endeudamiento` (refuerzo posterior a la primera revisión): la aceleración es una segunda diferencia `(end_t - end_{t-1}) - (end_{t-1} - end_{t-2})` y, por definición, necesita los dos tramos extremos (t-1 y t-2) para existir. En la versión anterior, cuando faltaba el endeudamiento de t-1 pero existía el de t-2, el cálculo dejaba un residuo no-neutral (+`end_{t-2}`), lo que rompía la promesa de "variación neutra cuando falta el dato". Ahora una máscara de validez (`numpy.isnan(end_t1) | numpy.isnan(end_t2)`, operación elemento a elemento documentada en NumPy) satura la feature a 0.0 cuando falta CUALQUIERA de los dos extremos, de modo que la aceleración es estrictamente neutra ante datos incompletos. Se conservan los asserts del bloque (cero NaN, orden de columnas) y el acotamiento final a `[-2, 2]`.
+
 ## 9. Ablación y no-regresión: ¿el multi-año hace retroceder el PISO?
 
 La regla del proyecto es dura: una configuración nueva solo se adopta por defecto si NO hace retroceder el PISO en el Test reservado. Se midió el aporte marginal de las once features con el MISMO split estratificado (`random_state=42`), el MISMO escuadrón y la MISMA calibración, en dos escenarios, evaluando en el Test reservado (3,988 empresas, 61 quiebras) y en la OOF del panel completo (19,937 empresas, 304 quiebras, validación cruzada de 5 pliegues con `cross_val_predict`). El resultado está en `salidas/analisis_multianio.json`.
@@ -229,15 +231,17 @@ La regla del proyecto es dura: una configuración nueva solo se adopta por defec
 | Escenario | N.º columnas | TEST ROC-AUC | TEST PR-AUC | TEST F1 óptimo | OOF ROC-AUC | OOF PR-AUC |
 |---|---|---|---|---|---|---|
 | SIN multi-año (PISO) | 90 | 0.8782 | 0.3115 | 0.4144 | 0.8867 | 0.2534 |
-| CON multi-año | 101 | 0.8878 | 0.3035 | 0.4068 | 0.8878 | 0.2555 |
-| Delta (CON - SIN) | - | +0.0096 | -0.0080 | -0.0076 | +0.0011 | +0.0021 |
+| CON multi-año | 101 | 0.8877 | 0.3000 | 0.4000 | 0.8880 | 0.2592 |
+| Delta (CON - SIN) | - | +0.0095 | -0.0115 | -0.0144 | +0.0013 | +0.0058 |
+
+(Estos números corresponden a la ablación re-ejecutada tras la corrección de simetría de `Aceleracion_Endeudamiento` descrita en la sección 8.B; `salidas/analisis_multianio.json` los deja trazados.)
 
 Lectura cuidadosa de los números:
 
-- En el Test reservado, el multi-año MEJORA el ROC-AUC (+0.0096) pero REGRESA levemente en PR-AUC (-0.0080) y F1 (-0.0076).
-- En la OOF del panel completo, el multi-año MEJORA ambas métricas de interés (ROC +0.0011, PR +0.0021).
+- En el Test reservado, el multi-año MEJORA el ROC-AUC (+0.0095) pero REGRESA en PR-AUC (-0.0115) y F1 (-0.0144).
+- En la OOF del panel completo, el multi-año MEJORA ambas métricas de interés (ROC +0.0013, PR +0.0058), con una mejora de PR-AUC más clara que antes.
 
-El criterio autoritativo de adopción se evalúa sobre el Test reservado: se adopta por defecto solo si `PR-AUC_test >= 0.3115 - 0.005 = 0.3065` Y `F1_test >= 0.4144 - 0.005 = 0.4094`. El escenario CON multi-año da PR-AUC 0.3035 (por debajo de 0.3065) y F1 0.4068 (por debajo de 0.4094), de modo que NO pasa el gate del Test. Por eso la bandera `USAR_FEATURES_MULTIANIO` queda en `False` por defecto: así el pipeline reproduce EXACTAMENTE el PISO (panel 19,937 / 304, TEST ROC 0.8782 / PR 0.3115 / F1 0.4144, mismas 90 columnas) y no se retrocede.
+El criterio autoritativo de adopción se evalúa sobre el Test reservado: se adopta por defecto solo si `PR-AUC_test >= 0.3115 - 0.005 = 0.3065` Y `F1_test >= 0.4144 - 0.005 = 0.4094`. El escenario CON multi-año da PR-AUC 0.3000 (por debajo de 0.3065) y F1 0.4000 (por debajo de 0.4094), de modo que NO pasa el gate del Test. Por eso la bandera `USAR_FEATURES_MULTIANIO` queda en `False` por defecto: así el pipeline reproduce EXACTAMENTE el PISO (panel 19,937 / 304, TEST ROC 0.8782 / PR 0.3115 / F1 0.4144, mismas 90 columnas) y no se retrocede.
 
 Ahora bien, "no adoptar por defecto" no es "descartar". La evidencia es matizada y favorable al multi-año en el conjunto más estable:
 
@@ -252,7 +256,7 @@ El corazón del pedido del usuario es que "uno agregue su propia empresa con los
 
 Cómo se resuelve, apoyado en lo construido:
 
-1. Cuentas de detalle faltantes del corte t: dentro de `construir_matriz_caracteristicas` varias cuentas de detalle (obligaciones vencidas, pasivo DIAN, gastos de administración y de ventas) se saturan de forma neutral con `.fillna(0)` antes de usarse, y todos los ratios pasan por `division_segura`/`.clip()`/`numpy.nan_to_num`. Una empresa que no reporta ese detalle recibe igualmente su vector de features.
+1. Cuentas faltantes del corte t (ampliado): dentro de `construir_matriz_caracteristicas` se saturan de forma neutral con `.fillna(0)` antes de usarse TANTO las cuentas de detalle (obligaciones vencidas, pasivo DIAN, gastos de administración y de ventas) COMO los totales estructurales del balance (activos, pasivos, patrimonio, corrientes, efectivo) y el núcleo del estado de resultados (ingresos, utilidad, EBIT, flujo de operación, costos financieros, ganancia bruta). Todos los ratios pasan además por `division_segura`/`.clip()`/`numpy.nan_to_num`. Una empresa que no reporta un total recibe igualmente su vector de features: la celda ausente se interpreta como 0 (saldo no informado => neutral) y las ramas `numpy.where(saldo > 0, ratio, default)` toman el camino "default" documentado, de modo que la ausencia no inventa ni deterioro ni solvencia.
 2. Historia plurianual ausente o parcial: las banderas de cobertura (`Anios_Historia_Disponible`, `Flag_Sin_Historia_3A`, `Flag_Historia_Parcial`) y la imputación neutral de las tendencias (variación 0.0 cuando falta el saldo) permiten que una empresa sin historia, o con solo uno o dos años, reciba predicción sin que ninguna feature multi-año se vuelva un requisito duro.
 3. Ensamble que no se rompe con faltantes: como X queda SIN NaN por la imputación-neutral, los cuatro modelos del ensamble (incluido `RandomForestClassifier`, que no acepta NaN) producen su probabilidad; luego el calibrador isotónico (`IsotonicRegression(out_of_bounds="clip", y_min=0, y_max=1)`) garantiza matemáticamente la salida en [0, 1].
 
@@ -260,15 +264,25 @@ Nota sobre el manejo nativo de NaN de los boosters: `HistGradientBoostingClassif
 
 Evidencia (`demo_entrada_parcial.py` -> `salidas/demo_entrada_parcial.json`): la demo REUTILIZA la ruta real de inferencia (misma `construir_matriz_caracteristicas`, mismas columnas `modelo["features"]`, mismo ensamble ponderado con `calcular_pesos_ensamble`, mismo calibrador isotónico y mismos umbrales de zona), cargando `salidas/modelo_final_2026.joblib`. Para simular datos parciales de forma honesta se toman filas reales del maestro 2025 y se mutilan de modo controlado.
 
-| Caso | Qué simula | Cuentas de detalle faltantes | Prob. calibrada | Zona |
+| Caso | Qué simula | Cuentas faltantes | Prob. calibrada | Zona |
 |---|---|---|---|---|
 | A | Cuentas de detalle faltantes + sin historia plurianual (NIT inexistente en 2020..2024) | 5 | 0.017816 | 1. VERDE |
 | B | Historia parcial (solo 2023 y 2024 para su NIT) | 0 | 0.008264 | 1. VERDE |
 | C | Datos completos (control) | 0 | 0.013158 | 1. VERDE |
+| D | Balance incompleto: totales estructurales ausentes (efectivo, flujo de operación, EBIT, costos financieros) | 4 | 0.007299 | 1. VERDE |
 
-Los tres casos devolvieron una probabilidad calibrada en [0, 1] sin lanzar excepción. El caso A es el más exigente que la ruta real soporta hoy: faltan cinco cuentas de detalle y no hay ningún año de historia multi-año, y aun así la empresa recibe su predicción (0.0178) y su zona.
+Los cuatro casos devolvieron una probabilidad calibrada en [0, 1] sin lanzar excepción. El caso A combina cinco cuentas de detalle ausentes con cero años de historia multi-año; el caso D vacía cuatro totales estructurales (los que antes eran un requisito duro) y aun así recibe predicción (0.0073), que es la prueba directa de que la ampliación de la imputación-neutral actúa como salvavidas para balances realmente incompletos.
 
-Hallazgo de diseño documentado con honestidad: el pipeline actual solo imputa de forma neutral las cuentas de DETALLE que satura con `.fillna(0)`. Los totales estructurales del balance (activos, pasivos, patrimonio, corrientes, efectivo) y el núcleo del estado de resultados (ingresos, utilidad, EBIT, costos financieros, flujo de operación) NO se imputan dentro de `construir_matriz_caracteristicas`: si llegan en NaN se propagan y el `assert X sin NaN` detiene la ejecución. Es decir, el "esqueleto contable mínimo" que una empresa debe aportar para recibir predicción son esos totales de balance más el núcleo del estado de resultados; el detalle fino sí puede faltar. La demo simula exactamente eso y lo deja escrito, para no fingir una robustez que el código todavía no tiene. Ampliar la imputación neutral a más cuentas estructurales (siempre con su flag de ausencia) es la evolución natural de producto si se quiere admitir reportes aún más incompletos.
+Evidencia explícita de la ruta multi-anual (refuerzo posterior a la primera revisión): la corrida de producción usa la bandera en su valor por defecto (`False`), de modo que el bloque plurianual no se ejecuta y los casos atraviesan el camino del PISO. Para demostrar que una fila SIN historia y una con HISTORIA PARCIAL atraviesan `construir_features_multianio` sin excepción, la demo FUERZA además la ruta multi-anual (activando la bandera de forma temporal y acotada dentro de `_predecir`, que restaura su valor en un `finally`), sin cambiar el DEFAULT del pipeline. El resultado quedó en `salidas/demo_entrada_parcial.json` bajo `evidencia_ruta_multianual_forzada`:
+
+| Caso (ruta multi-anual forzada) | `Anios_Historia_Disponible` | `Flag_Sin_Historia_3A` | `Flag_Historia_Parcial` | Prob. calibrada | Sin excepción |
+|---|---|---|---|---|---|
+| A (sin historia) | 0 | 1 | 0 | 0.017816 | Sí |
+| B (historia parcial 2023-2024) | 2 | 0 | 1 | 0.008264 | Sí |
+
+Para el caso B se asevera explícitamente `0 < Anios_Historia_Disponible < 4` (ventana plena), confirmando que es historia ESTRICTAMENTE parcial (ni ausente ni completa), tal como pedía el requisito de verificación. Ambas filas construyen el bloque plurianual de 11 columnas sin NaN (imputación-neutral + flags) y producen probabilidad en [0, 1].
+
+Esqueleto contable mínimo (actualizado): tras la ampliación de la imputación-neutral, el pipeline ya NO exige los totales estructurales del balance ni el núcleo del estado de resultados como requisito duro; todos se saturan con `.fillna(0)` y el `assert X sin NaN` se conserva. No-regresión verificada: en los paneles reales 2024 y 2025 esas 12 columnas no contienen NaN, de modo que el `.fillna(0)` es inocuo para el entrenamiento y el PISO se reproduce exacto (panel 19,937 / 304, TEST ROC 0.8782 / PR 0.3115 / F1 0.4144); la ampliación solo actúa cuando el usuario aporta un balance incompleto. En la práctica, el único "esqueleto mínimo" que persiste son las variables de fase 4 ya calculadas (columnas `Flag_*` y `Edad_Empresa_Anios`) que llegan desde el maestro; para una empresa nueva se generan en las fases previas de la tubería.
 
 ## 11. Proyección del Semáforo 2026 regenerada (configuración por defecto)
 

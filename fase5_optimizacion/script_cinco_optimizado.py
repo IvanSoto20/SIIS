@@ -367,18 +367,36 @@ def construir_matriz_caracteristicas(
     cols_base = [c for c in cols_base if c != "Flag_Quiebra_Patrimonial"] + ["Edad_Empresa_Anios"]
     X = df[cols_base].astype(float).copy()
 
-    # Saldos contables de corte t
-    activos = df["Total de activos (Assets)"].clip(lower=0).astype(float)
-    pasivos = df["Total pasivos (Liabilities)"].clip(lower=0).astype(float)
-    patrimonio = df["Patrimonio total (Equity)"].clip(lower=0).astype(float)
-    act_corr = df["Activos corrientes totales (CurrentAssets)"].clip(lower=0).astype(float)
-    pas_corr = df["Pasivos corrientes totales (CurrentLiabilities)"].clip(lower=0).astype(float)
-    efectivo = df["Efectivo y equivalentes al efectivo (CashAndCashEquivalents)"].clip(lower=0).astype(float)
-    ingresos = df["Ingresos de actividades ordinarias (Revenue)"].clip(lower=0).astype(float)
-    utilidad = df["Ganancia (pérdida) (ProfitLoss)"].astype(float)
-    ebit = df["Ganancia (pérdida) por actividades de operación (GananciaPerdidaPorActividadesDeOperacion)"].astype(float)
-    flujo_op = df["Flujos de efectivo netos procedentes de (utilizados en) actividades de operación (CashFlowsFromUsedInOperatingActivities)"].astype(float)
-    costos_fin = df["Costos financieros (FinanceCosts)"].clip(lower=0).astype(float)
+    # Saldos contables de corte t.
+    # IMPUTACION-NEUTRAL DE ENTRADA PARCIAL (HALLAZGO #2): se satura con ``.fillna(0)``
+    # ANTES de usarlos TAMBIEN los totales estructurales del balance (activos,
+    # pasivos, patrimonio, corrientes, efectivo) y el nucleo del estado de resultados
+    # (ingresos, utilidad, EBIT, flujo de operacion, costos financieros). Asi una
+    # empresa que aporta "los datos que tenga disponibles" (no necesariamente todos)
+    # recibe igual su prediccion: un total ausente se interpreta como 0 (saldo no
+    # informado => neutral). EFECTO EN LOS RATIOS: un 0 neutral hace que las ramas
+    # ``np.where(saldo > 0, ratio, default)`` tomen el camino "default" documentado
+    # (p.ej. patrimonio=0 => tasas de consumo/ROE caen a su piso 0.0 o -2.0), de modo
+    # que la celda faltante no inventa deterioro ni solvencia; simplemente deja de
+    # aportar informacion. Para los totales no negativos ``.clip(lower=0)`` deja el 0
+    # invariante; para los que pueden ser negativos (utilidad, EBIT, flujo, costos)
+    # el 0 es el valor neutro natural (sin ganancia ni perdida, sin flujo).
+    # NO-REGRESION (verificado): en los paneles reales 2024 y 2025 estas 12 columnas
+    # NO contienen NaN, por lo que ``.fillna(0)`` es inocuo para el entrenamiento y el
+    # PISO se conserva byte a byte; solo actua como salvavidas ante entrada parcial.
+    # pandas.Series.fillna reemplaza unicamente los NaN (documentacion de pandas:
+    # "Fill NA/NaN values using the specified method/value"), sin tocar datos reales.
+    activos = df["Total de activos (Assets)"].fillna(0).clip(lower=0).astype(float)
+    pasivos = df["Total pasivos (Liabilities)"].fillna(0).clip(lower=0).astype(float)
+    patrimonio = df["Patrimonio total (Equity)"].fillna(0).clip(lower=0).astype(float)
+    act_corr = df["Activos corrientes totales (CurrentAssets)"].fillna(0).clip(lower=0).astype(float)
+    pas_corr = df["Pasivos corrientes totales (CurrentLiabilities)"].fillna(0).clip(lower=0).astype(float)
+    efectivo = df["Efectivo y equivalentes al efectivo (CashAndCashEquivalents)"].fillna(0).clip(lower=0).astype(float)
+    ingresos = df["Ingresos de actividades ordinarias (Revenue)"].fillna(0).clip(lower=0).astype(float)
+    utilidad = df["Ganancia (pérdida) (ProfitLoss)"].fillna(0).astype(float)
+    ebit = df["Ganancia (pérdida) por actividades de operación (GananciaPerdidaPorActividadesDeOperacion)"].fillna(0).astype(float)
+    flujo_op = df["Flujos de efectivo netos procedentes de (utilizados en) actividades de operación (CashFlowsFromUsedInOperatingActivities)"].fillna(0).astype(float)
+    costos_fin = df["Costos financieros (FinanceCosts)"].fillna(0).clip(lower=0).astype(float)
 
     cxp_vencidas = df["Total obligaciones vencidas [miembro] (CxPTotalObligacionesVencidasMiembro)"].fillna(0).clip(lower=0).astype(float)
     cxp_360 = df["Valor obligaciones vencidas de mas de 360 días [miembro] (CxPObligacionesVencidasMasDeTrescientossesentaDiasMiembro)"].fillna(0).clip(lower=0).astype(float)
@@ -447,7 +465,10 @@ def construir_matriz_caracteristicas(
     X["Ratio_Deuda_Critica_Sobre_Patrimonio"] = np.where(
         patrimonio > 0, (deuda_critica_exigible / patrimonio).clip(0, 5), np.where(deuda_critica_exigible > 0, 5.0, 0.0)
     )
-    X["Flag_Margen_Bruto_Negativo"] = (df["Ganancia bruta (GrossProfit)"] < 0).astype(int)
+    # Ganancia bruta tambien se blinda con imputacion-neutral (HALLAZGO #2): si falta,
+    # se interpreta como 0 (ni margen positivo ni negativo), de modo que la bandera no
+    # se dispara por un dato ausente. En el panel real no hay NaN aqui, asi que es inocuo.
+    X["Flag_Margen_Bruto_Negativo"] = (df["Ganancia bruta (GrossProfit)"].fillna(0) < 0).astype(int)
 
     # Trampas forenses de alta probabilidad de quiebra
     X["Flag_Trampa_Endeudamiento_Critico"] = ((X["Nivel_Endeudamiento"] >= 0.85) & (utilidad < 0)).astype(int)

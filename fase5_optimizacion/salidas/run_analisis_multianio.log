@@ -1,0 +1,66 @@
+==========================================================================================
+FEAT-005: ABLACION DE FEATURES PLURIANUALES 2020..2024 (CON vs SIN)
+==========================================================================================
+
+==========================================================================================
+[ESCENARIO] SIN features plurianuales (PISO) (USAR_FEATURES_MULTIANIO=False)
+==========================================================================================
+Cargando saldos anteriores desde caché: prev_2023.pkl
+Panel: 19937 empresas x 90 features | quiebras y=304
+
+Entrenando Escuadrón Élite Forense sobre X_train (15,949 empresas)...
+  LightGBM_Forense       -> ROC-AUC: 0.8665 | PR-AUC: 0.3002
+  XGBoost_Forense        -> ROC-AUC: 0.8736 | PR-AUC: 0.3106
+  HistGradientBoosting   -> ROC-AUC: 0.8611 | PR-AUC: 0.2397
+  RandomForest_Forense   -> ROC-AUC: 0.8845 | PR-AUC: 0.3147
+
+---> SUPER-ENSAMBLE FORENSE 4 MODELOS (0.30*LightGBM_Forense + 0.30*XGBoost_Forense + 0.20*HistGradientBoosting + 0.20*RandomForest_Forense)
+     ROC-AUC: 0.8782 | PR-AUC: 0.3115
+
+Entrenando Escuadrón Élite Forense sobre X_train (15,949 empresas)...
+  LightGBM_Forense       -> ROC-AUC: 0.9984 | PR-AUC: 0.8976
+  XGBoost_Forense        -> ROC-AUC: 0.9954 | PR-AUC: 0.7960
+  HistGradientBoosting   -> ROC-AUC: 0.9534 | PR-AUC: 0.4578
+  RandomForest_Forense   -> ROC-AUC: 0.9789 | PR-AUC: 0.7016
+
+---> SUPER-ENSAMBLE FORENSE 4 MODELOS (0.30*LightGBM_Forense + 0.30*XGBoost_Forense + 0.20*HistGradientBoosting + 0.20*RandomForest_Forense)
+     ROC-AUC: 0.9952 | PR-AUC: 0.7746
+
+==========================================================================================
+[ESCENARIO] CON features plurianuales (USAR_FEATURES_MULTIANIO=True)
+==========================================================================================
+Cargando saldos anteriores desde caché: prev_2023.pkl
+Cargando series multi-anuales desde cache: series_saldos_multianio.pkl
+Panel: 19937 empresas x 101 features | quiebras y=304
+
+Entrenando Escuadrón Élite Forense sobre X_train (15,949 empresas)...
+  LightGBM_Forense       -> ROC-AUC: 0.8794 | PR-AUC: 0.2855
+  XGBoost_Forense        -> ROC-AUC: 0.8809 | PR-AUC: 0.2906
+  HistGradientBoosting   -> ROC-AUC: 0.8706 | PR-AUC: 0.2476
+  RandomForest_Forense   -> ROC-AUC: 0.8914 | PR-AUC: 0.3260
+
+---> SUPER-ENSAMBLE FORENSE 4 MODELOS (0.30*LightGBM_Forense + 0.30*XGBoost_Forense + 0.20*HistGradientBoosting + 0.20*RandomForest_Forense)
+     ROC-AUC: 0.8877 | PR-AUC: 0.3000
+
+Entrenando Escuadrón Élite Forense sobre X_train (15,949 empresas)...
+  LightGBM_Forense       -> ROC-AUC: 0.9987 | PR-AUC: 0.9119
+  XGBoost_Forense        -> ROC-AUC: 0.9961 | PR-AUC: 0.8192
+  HistGradientBoosting   -> ROC-AUC: 0.9545 | PR-AUC: 0.4435
+  RandomForest_Forense   -> ROC-AUC: 0.9807 | PR-AUC: 0.7138
+
+---> SUPER-ENSAMBLE FORENSE 4 MODELOS (0.30*LightGBM_Forense + 0.30*XGBoost_Forense + 0.20*HistGradientBoosting + 0.20*RandomForest_Forense)
+     ROC-AUC: 0.9958 | PR-AUC: 0.7931
+
+==========================================================================================
+RESULTADO DE LA ABLACION PLURIANUAL (Test reservado)
+==========================================================================================
+  SIN multi-anio -> ROC 0.8782 | PR 0.3115 | F1 0.4144
+  CON multi-anio -> ROC 0.8877 | PR 0.3 | F1 0.4
+  Delta (CON-SIN) -> ROC 0.0095 | PR -0.0115 | F1 -0.0144
+  Columnas plurianuales anadidas (11): ['Anios_Historia_Disponible', 'Flag_Sin_Historia_3A', 'Flag_Historia_Parcial', 'Pendiente_Patrimonio_3A_Sobre_Activos', 'Var_Patrimonio_2A_Sobre_Activos', 'CAGR_Ingresos_Multianio', 'Aceleracion_Endeudamiento', 'Anios_Con_Perdida_Ventana', 'Persistencia_Perdidas_3A', 'Flag_Deterioro_Patrimonial_Sostenido', 'Flag_Paralisis_Sostenida_Multianio']
+  NO REGRESA EL PISO: False | MEJORA EL PISO: False
+  RECOMENDACION USAR_FEATURES_MULTIANIO = False
+
+[OK] Guardado /projects/sandbox/SIIS/fase5_optimizacion/salidas/analisis_multianio.json
+
+Proceso de analisis FEAT-005 completado con exito.

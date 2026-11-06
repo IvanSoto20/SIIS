@@ -29,34 +29,34 @@
     "recall_en_f1": 0.377
   },
   "test_con_multianio": {
-    "roc_auc": 0.8878,
-    "pr_auc": 0.3035,
-    "f1_optimo": 0.4068,
-    "umbral_f1_optimo": 0.508,
-    "precision_en_f1": 0.4211,
+    "roc_auc": 0.8877,
+    "pr_auc": 0.3,
+    "f1_optimo": 0.4,
+    "umbral_f1_optimo": 0.5004,
+    "precision_en_f1": 0.4068,
     "recall_en_f1": 0.3934
   },
   "delta_test_con_menos_sin": {
-    "roc_auc": 0.0096,
-    "pr_auc": -0.008,
-    "f1_optimo": -0.0076
+    "roc_auc": 0.0095,
+    "pr_auc": -0.0115,
+    "f1_optimo": -0.0144
   },
   "oof_sin_multianio": {
     "roc_auc": 0.8867,
     "pr_auc": 0.2534
   },
   "oof_con_multianio": {
-    "roc_auc": 0.8878,
-    "pr_auc": 0.2555
+    "roc_auc": 0.888,
+    "pr_auc": 0.2592
   },
   "delta_oof_con_menos_sin": {
-    "roc_auc": 0.0011,
-    "pr_auc": 0.0021
+    "roc_auc": 0.0013,
+    "pr_auc": 0.0058
   },
   "decision_adopcion": {
     "criterio": "adoptar DEFAULT (True) solo si PR-AUC_test >= 0.3065 y F1_test >= 0.4094 (PISO +/- 0.005)",
-    "pr_auc_test_con": 0.3035,
-    "f1_test_con": 0.4068,
+    "pr_auc_test_con": 0.3,
+    "f1_test_con": 0.4,
     "no_regresa_piso": false,
     "mejora_piso": false,
     "usar_features_multianio_recomendado": false

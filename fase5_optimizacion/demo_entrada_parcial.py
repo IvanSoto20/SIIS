@@ -105,6 +105,7 @@ import pandas as pd
 # Reutilizamos EXACTAMENTE las piezas de produccion. El import no dispara el
 # pipeline porque script_cinco_optimizado protege su ejecucion con el guardian
 # __main__.
+import script_cinco_optimizado as pipeline
 from script_cinco_optimizado import (
     BASE_DIR,
     SALIDAS_DIR,
@@ -115,6 +116,10 @@ from script_cinco_optimizado import (
     construir_matriz_caracteristicas,
     normalizar_nit,
     obtener_saldos_periodo_anterior,
+)
+from features_multianio import (
+    PROFUNDIDAD_HISTORIA,
+    construir_features_multianio,
 )
 
 RUTA_MODELO = SALIDAS_DIR / "modelo_final_2026.joblib"
@@ -145,6 +150,20 @@ CUENTAS_A_VACIAR_CASO_A = [
     "Gastos de ventas (DistributionCosts)",
 ]
 
+# Totales estructurales del balance y nucleo del estado de resultados que, TRAS la
+# ampliacion de la imputacion-neutral (HALLAZGO #2), tambien se toleran ausentes: la
+# ruta de produccion los satura con ``.fillna(0)`` antes de usarlos, de modo que una
+# empresa con balance realmente incompleto recibe igual prediccion. El CASO D vacia
+# un subconjunto representativo (efectivo, flujo de operacion, EBIT y costos
+# financieros) para DEMOSTRAR que ahora SI se obtiene probabilidad en [0,1] donde
+# antes el ``assert X sin NaN`` habria detenido el pipeline.
+CUENTAS_ESTRUCTURALES_A_VACIAR_CASO_D = [
+    "Efectivo y equivalentes al efectivo (CashAndCashEquivalents)",
+    "Flujos de efectivo netos procedentes de (utilizados en) actividades de operación (CashFlowsFromUsedInOperatingActivities)",
+    "Ganancia (pérdida) por actividades de operación (GananciaPerdidaPorActividadesDeOperacion)",
+    "Costos financieros (FinanceCosts)",
+]
+
 
 def _zona_desde_score(score: float, umbrales: dict) -> str:
     """
@@ -161,7 +180,13 @@ def _zona_desde_score(score: float, umbrales: dict) -> str:
     return "1. VERDE (Estable / Sano)"
 
 
-def _predecir(df_entrada: pd.DataFrame, prev_2024: pd.DataFrame, series_multianio, modelo: dict) -> np.ndarray:
+def _predecir(
+    df_entrada: pd.DataFrame,
+    prev_2024: pd.DataFrame,
+    series_multianio,
+    modelo: dict,
+    forzar_multianio: bool = False,
+) -> np.ndarray:
     """
     RUTA DE INFERENCIA REAL: construye X igual que la proyeccion 2026, selecciona las
     columnas ``modelo["features"]`` y aplica el ensamble ponderado + calibrador
@@ -169,12 +194,38 @@ def _predecir(df_entrada: pd.DataFrame, prev_2024: pd.DataFrame, series_multiani
 
     Es, intencionalmente, la MISMA secuencia de operaciones de
     ``proyectar_semaforo_2026`` para que la demo pruebe el camino de produccion.
+
+    Parametro ``forzar_multianio``
+    ------------------------------
+    Cuando es True, se activa TEMPORALMENTE la bandera maestra
+    ``USAR_FEATURES_MULTIANIO`` del modulo pipeline durante la construccion de X, de
+    modo que ``construir_matriz_caracteristicas`` ejecute el BLOQUE E plurianual
+    (``construir_features_multianio``) INDEPENDIENTEMENTE del valor de produccion de
+    la bandera. Esto permite ejercer de forma explicita la ruta multi-anual (CASO B
+    con historia parcial y CASO A sin historia) como pide el HALLAZGO #1, sin cambiar
+    el DEFAULT del pipeline (que sigue en False por el gate de no-regresion). El valor
+    original se restaura siempre en el ``finally``. Nota: cuando se fuerza el bloque
+    plurianual, X trae columnas adicionales que NO estan en ``modelo['features']``
+    (el modelo de produccion se entreno con 90 features, sin las plurianuales), por lo
+    que para la prediccion se seleccionan solo las columnas conocidas por el modelo;
+    el objetivo de la ruta forzada es DEMOSTRAR que el bloque plurianual se construye
+    sin excepcion y que la empresa parcial igual obtiene prob en [0,1].
     """
-    # 1) Ingenieria de features identica a la proyeccion (corte t = 2025, historia <=2024).
-    X = construir_matriz_caracteristicas(
-        df_entrada, prev_2024, series_multianio=series_multianio, anio_t=2025
-    )
+    valor_original = pipeline.USAR_FEATURES_MULTIANIO
+    try:
+        if forzar_multianio:
+            pipeline.USAR_FEATURES_MULTIANIO = True
+        # 1) Ingenieria de features (corte t = 2025, historia <=2024). Con la ruta
+        #    forzada se ejecuta ademas el bloque plurianual de features_multianio.
+        X = construir_matriz_caracteristicas(
+            df_entrada, prev_2024, series_multianio=series_multianio, anio_t=2025
+        )
+    finally:
+        pipeline.USAR_FEATURES_MULTIANIO = valor_original
+
     # 2) Mismo contrato de columnas que X_completo (las features guardadas en el modelo).
+    #    Si se forzo el bloque plurianual, X trae columnas extra; se descartan aqui para
+    #    predecir con el contrato real del modelo de produccion (90 features).
     X = X[modelo["features"]]
     assert X.isnull().sum().sum() == 0, "La ruta de inferencia produjo NaN en X (no deberia)."
 
@@ -187,6 +238,41 @@ def _predecir(df_entrada: pd.DataFrame, prev_2024: pd.DataFrame, series_multiani
     # 4) Misma calibracion isotonica. IsotonicRegression(out_of_bounds='clip') acota a [0,1].
     probs = modelo["calibrador"].predict(score)
     return np.asarray(score, dtype=float), np.asarray(probs, dtype=float)
+
+
+def _inspeccionar_bloque_multianio(
+    df_entrada: pd.DataFrame,
+    series_multianio,
+    saldos_t_cols: dict,
+) -> pd.DataFrame:
+    """
+    Ejerce DIRECTAMENTE ``construir_features_multianio`` (la ruta plurianual) sobre una
+    fila de entrada y devuelve el bloque de 11 columnas plurianuales, para poder
+    ASEVERAR la cobertura de historia (``Anios_Historia_Disponible`` y las banderas).
+
+    Reutiliza la misma funcion de produccion; no inventa una ruta paralela. ``saldos_t``
+    se arma igual que en ``construir_matriz_caracteristicas`` (saldos del corte t ya
+    clipeados a >= 0) para alimentar el punto final de las pendientes.
+    """
+    activos = df_entrada[saldos_t_cols["activos"]].fillna(0).clip(lower=0).astype(float)
+    pasivos = df_entrada[saldos_t_cols["pasivos"]].fillna(0).clip(lower=0).astype(float)
+    patrimonio = df_entrada[saldos_t_cols["patrimonio"]].fillna(0).clip(lower=0).astype(float)
+    ingresos = df_entrada[saldos_t_cols["ingresos"]].fillna(0).clip(lower=0).astype(float)
+    utilidad = df_entrada[saldos_t_cols["utilidad"]].fillna(0).astype(float)
+    saldos_t = {
+        "activos": activos,
+        "pasivos": pasivos,
+        "patrimonio": patrimonio,
+        "ingresos": ingresos,
+        "utilidad": utilidad,
+    }
+    bloque = construir_features_multianio(
+        df_maestro_t=df_entrada,
+        series_multianio=series_multianio,
+        anio_t=2025,
+        saldos_t=saldos_t,
+    )
+    return bloque
 
 
 def main() -> None:
@@ -206,14 +292,14 @@ def main() -> None:
     # Saldos 'Periodo Anterior' (2024) usados por la ruta de proyeccion 2025->2026.
     prev_2024 = obtener_saldos_periodo_anterior(SIIS_DIR, "prev_2024.pkl")
 
-    # Serie plurianual solo si la bandera esta activa (igual que produccion). Con la
-    # bandera OFF (config vigente/PISO) la serie no se usa y las features plurianuales
-    # no entran en X; la demo de entrada parcial sigue siendo valida porque la
-    # tolerancia a faltantes del corte t vive en construir_matriz_caracteristicas.
-    series_multianio = None
-    if USAR_FEATURES_MULTIANIO:
-        from datos_multianio import construir_series_saldos_multianio
-        series_multianio = construir_series_saldos_multianio(usar_cache=True)
+    # Serie plurianual. A diferencia de la version anterior (que solo la cargaba si la
+    # bandera de produccion estaba ON), AHORA la cargamos SIEMPRE porque esta demo debe
+    # ejercer EXPLICITAMENTE la ruta multi-anual (HALLAZGO #1), independientemente del
+    # valor de produccion de la bandera. El DEFAULT del pipeline NO cambia: sigue en
+    # USAR_FEATURES_MULTIANIO=False por el gate del Test; solo la evidencia forzada de
+    # esta demo activa el bloque plurianual de forma temporal y acotada.
+    from datos_multianio import construir_series_saldos_multianio
+    series_multianio = construir_series_saldos_multianio(usar_cache=True)
 
     # ------------------------------------------------------------------
     # Tomamos filas REALES del maestro 2025 (poblacion sana) como base.
@@ -224,8 +310,8 @@ def main() -> None:
         df_2025["Estado actual"].isin(sanas_estados)
         & (df_2025["Flag_Quiebra_Patrimonial"] == 0)
     ].copy()
-    # Tres filas base distintas y reproducibles.
-    base = df_2025_sanas.head(3).reset_index(drop=True).copy()
+    # Cuatro filas base distintas y reproducibles.
+    base = df_2025_sanas.head(4).reset_index(drop=True).copy()
 
     # ==================================================================
     # CASO A: cuentas faltantes + SIN historia plurianual.
@@ -254,30 +340,47 @@ def main() -> None:
     caso_c = base.iloc[[2]].copy()
     caso_c["Razón social de la sociedad"] = "EMPRESA DEMO C (DATOS COMPLETOS, CONTROL)"
 
-    # ------------------------------------------------------------------
-    # Serie plurianual recortada para el CASO B (solo 2023 y 2024 de su NIT).
-    # Solo aplica si la bandera esta ON; con la bandera OFF la serie no se usa.
-    # ------------------------------------------------------------------
-    series_para_b = series_multianio
-    if USAR_FEATURES_MULTIANIO and series_multianio is not None:
-        series_para_b = {}
-        for anio, df_anio in series_multianio.items():
-            df_rec = df_anio.copy()
-            if anio not in (2023, 2024):
-                # Quitamos a este NIT de los anios != {2023, 2024} para dejar historia parcial.
-                mask = normalizar_nit(df_rec["NIT"]) != nit_b
-                df_rec = df_rec[mask].copy()
-            series_para_b[anio] = df_rec
+    # ==================================================================
+    # CASO D: balance realmente incompleto (totales estructurales ausentes).
+    # Demuestra el salvavidas de la ampliacion de imputacion-neutral (HALLAZGO #2):
+    # antes, un total estructural en NaN detenia el pipeline en el assert; ahora la
+    # empresa recibe igual prediccion.
+    # ==================================================================
+    caso_d = base.iloc[[3]].copy()
+    caso_d["Razón social de la sociedad"] = "EMPRESA DEMO D (BALANCE INCOMPLETO, TOTALES AUSENTES)"
+    for cuenta in CUENTAS_ESTRUCTURALES_A_VACIAR_CASO_D:
+        if cuenta in caso_d.columns:
+            caso_d[cuenta] = np.nan
 
     # ------------------------------------------------------------------
-    # INFERENCIA por la ruta real. Cada caso se pasa por _predecir.
+    # Serie plurianual recortada para el CASO B (solo 2023 y 2024 de su NIT).
+    # Se construye SIEMPRE (no condicionada a la bandera) porque la evidencia forzada
+    # de la ruta multi-anual (abajo) la usa para demostrar historia parcial real.
+    # ------------------------------------------------------------------
+    series_para_b = {}
+    for anio, df_anio in series_multianio.items():
+        df_rec = df_anio.copy()
+        if anio not in (2023, 2024):
+            # Quitamos a este NIT de los anios != {2023, 2024} para dejar historia parcial.
+            mask = normalizar_nit(df_rec["NIT"]) != nit_b
+            df_rec = df_rec[mask].copy()
+        series_para_b[anio] = df_rec
+
+    # ------------------------------------------------------------------
+    # INFERENCIA por la ruta real (bandera de produccion, hoy OFF = PISO).
+    # Cada caso se pasa por _predecir con la bandera en su valor de produccion.
     # ------------------------------------------------------------------
     resultados = []
     casos = [
         ("A", "cuentas faltantes + sin historia plurianual", caso_a, series_multianio),
         ("B", "historia parcial (solo 2023 y 2024)", caso_b, series_para_b),
         ("C", "datos completos (control)", caso_c, series_multianio),
+        ("D", "balance incompleto: totales estructurales ausentes", caso_d, series_multianio),
     ]
+
+    # Columnas crudas de los totales estructurales que la ampliacion ahora tolera en
+    # NaN; se usan para contar cuantos totales quedaron faltantes por fila (evidencia).
+    cuentas_vigiladas = list(CUENTAS_A_VACIAR_CASO_A) + list(CUENTAS_ESTRUCTURALES_A_VACIAR_CASO_D)
 
     for etiqueta, descripcion, df_caso, serie_caso in casos:
         score, probs = _predecir(df_caso, prev_2024, serie_caso, modelo)
@@ -289,7 +392,7 @@ def main() -> None:
 
         # Cuantas cuentas crudas quedaron faltantes en la fila de entrada (evidencia).
         cuentas_faltantes = [
-            c for c in CUENTAS_A_VACIAR_CASO_A
+            c for c in cuentas_vigiladas
             if c in df_caso.columns and pd.isna(df_caso[c].iloc[0])
         ]
 
@@ -317,6 +420,86 @@ def main() -> None:
             f"  Zona semaforo      : {registro['zona_semaforo']}"
         )
 
+    # ==================================================================
+    # EVIDENCIA EXPLICITA DE LA RUTA MULTI-ANUAL (HALLAZGO #1)
+    # ==================================================================
+    # La corrida anterior usa la bandera de produccion (hoy OFF), de modo que el bloque
+    # plurianual NO se ejecuta y los casos atraviesan el camino identico al PISO. Para
+    # dejar EVIDENCIA de que una fila SIN historia (CASO A) y una con HISTORIA PARCIAL
+    # (CASO B) atraviesan ``construir_features_multianio`` SIN excepcion y producen una
+    # probabilidad en [0,1], aqui se FUERZA la ruta multi-anual (forzar_multianio=True)
+    # independientemente del valor de produccion de la bandera. El DEFAULT del pipeline
+    # NO cambia; esto es evidencia local y acotada (el valor se restaura en _predecir).
+    print("\n" + "-" * 90)
+    print("EVIDENCIA FORZADA DE LA RUTA MULTI-ANUAL (construir_features_multianio)")
+    print("-" * 90)
+
+    # Columnas crudas de los saldos del corte t para inspeccionar el bloque plurianual.
+    saldos_t_cols = {
+        "activos": "Total de activos (Assets)",
+        "pasivos": "Total pasivos (Liabilities)",
+        "patrimonio": "Patrimonio total (Equity)",
+        "ingresos": "Ingresos de actividades ordinarias (Revenue)",
+        "utilidad": "Ganancia (pérdida) (ProfitLoss)",
+    }
+    ventana_plena = PROFUNDIDAD_HISTORIA  # anios de la ventana [anio_t-4, anio_t-1]
+
+    evidencia_multianio = []
+    casos_ma = [
+        ("A", "sin historia plurianual", caso_a, series_multianio, 0, 0),
+        ("B", "historia parcial (solo 2023 y 2024)", caso_b, series_para_b, 1, ventana_plena - 1),
+    ]
+    for etiqueta, descripcion, df_caso, serie_caso, min_esp, max_esp in casos_ma:
+        # 1) Inspeccion directa del bloque plurianual (cobertura de historia).
+        bloque = _inspeccionar_bloque_multianio(df_caso, serie_caso, saldos_t_cols)
+        anios_disp = int(bloque["Anios_Historia_Disponible"].iloc[0])
+        flag_sin = int(bloque["Flag_Sin_Historia_3A"].iloc[0])
+        flag_parcial = int(bloque["Flag_Historia_Parcial"].iloc[0])
+        # El bloque plurianual nunca debe traer NaN (imputacion-neutral + flags).
+        assert bloque.isnull().sum().sum() == 0, f"NaN en el bloque plurianual (caso {etiqueta})."
+
+        # 2) Prediccion por la ruta multi-anual FORZADA (bloque E activo) para confirmar
+        #    que la fila atraviesa inferencia sin excepcion y produce prob en [0,1].
+        score, probs = _predecir(df_caso, prev_2024, serie_caso, modelo, forzar_multianio=True)
+        prob_val = float(probs[0])
+        assert 0.0 <= prob_val <= 1.0, f"Prob fuera de [0,1] en ruta multi-anual (caso {etiqueta}): {prob_val}"
+
+        # 3) Aserciones de cobertura segun el caso.
+        if etiqueta == "A":
+            # Sin historia: cero anios disponibles y bandera de sin-historia activa.
+            assert anios_disp == 0, f"CASO A deberia tener 0 anios de historia, tiene {anios_disp}."
+            assert flag_sin == 1, "CASO A deberia activar Flag_Sin_Historia_3A."
+        if etiqueta == "B":
+            # HALLAZGO #4: aseverar historia ESTRICTAMENTE parcial (ni ausente ni plena).
+            assert 0 < anios_disp < ventana_plena, (
+                f"CASO B deberia tener 0 < Anios_Historia_Disponible < {ventana_plena}, "
+                f"tiene {anios_disp}."
+            )
+            assert flag_parcial == 1, "CASO B deberia activar Flag_Historia_Parcial."
+            assert flag_sin == 0, "CASO B no deberia activar Flag_Sin_Historia_3A."
+
+        registro_ma = {
+            "caso": etiqueta,
+            "descripcion": descripcion,
+            "ruta": "multi-anual FORZADA (construir_features_multianio ejercido)",
+            "anios_historia_disponible": anios_disp,
+            "flag_sin_historia_3a": flag_sin,
+            "flag_historia_parcial": flag_parcial,
+            "ventana_plena": int(ventana_plena),
+            "probabilidad_calibrada_quiebra": round(prob_val, 6),
+            "probabilidad_en_rango_0_1": bool(0.0 <= prob_val <= 1.0),
+            "sin_excepcion": True,
+        }
+        evidencia_multianio.append(registro_ma)
+        print(
+            f"\n[RUTA MULTI-ANUAL - CASO {etiqueta}] {descripcion}\n"
+            f"  Anios_Historia_Disponible : {anios_disp} (ventana plena={ventana_plena})\n"
+            f"  Flag_Sin_Historia_3A      : {flag_sin}\n"
+            f"  Flag_Historia_Parcial     : {flag_parcial}\n"
+            f"  Prob. calibrada (ruta MA) : {prob_val:.6f} (en [0,1]: {0.0 <= prob_val <= 1.0})\n"
+            f"  construir_features_multianio ejercido SIN excepcion: True"
+        )
+
     # ------------------------------------------------------------------
     # Persistencia del resultado como EVIDENCIA.
     # ------------------------------------------------------------------
@@ -334,25 +517,43 @@ def main() -> None:
         ),
         "estrategia_faltantes": (
             "Imputacion-neutral dentro de construir_matriz_caracteristicas (fillna/clip/"
-            "division_segura) para cuentas del corte t ausentes, y flags de cobertura + "
-            "variacion neutra 0.0 para la historia plurianual ausente. X queda sin NaN, "
-            "manteniendo operativo a RandomForest (que no acepta NaN)."
+            "division_segura) para TODAS las cuentas del corte t ausentes, incluidos los "
+            "totales estructurales del balance y el nucleo del estado de resultados "
+            "(ampliacion HALLAZGO #2), y flags de cobertura + variacion neutra 0.0 para "
+            "la historia plurianual ausente. X queda sin NaN, manteniendo operativo a "
+            "RandomForest (que no acepta NaN)."
         ),
         "n_modelos_ensamble": len(modelo["modelos"]),
         "n_features": len(modelo["features"]),
         "umbrales_zona": {k: round(float(v), 6) for k, v in modelo["umbrales"].items()},
         "casos": resultados,
+        "evidencia_ruta_multianual_forzada": {
+            "proposito": (
+                "Ejercer EXPLICITAMENTE la ruta multi-anual (construir_features_multianio) "
+                "para una fila SIN historia (CASO A) y una con HISTORIA PARCIAL (CASO B), "
+                "forzando el bloque plurianual INDEPENDIENTEMENTE del valor de produccion "
+                "de la bandera (que sigue en False por defecto). Demuestra que ambas filas "
+                "atraviesan la construccion plurianual sin excepcion y producen prob en [0,1]."
+            ),
+            "bandera_produccion_sin_cambios": bool(USAR_FEATURES_MULTIANIO),
+            "casos": evidencia_multianio,
+        },
     }
     ruta_json = SALIDAS_DIR / "demo_entrada_parcial.json"
     with open(ruta_json, "w", encoding="utf-8") as f:
         json.dump(salida, f, indent=2, ensure_ascii=False)
 
-    # Resumen final: todos los casos deben haber producido probabilidad en [0,1].
+    # Resumen final: todos los casos deben haber producido probabilidad en [0,1],
+    # tanto por la ruta de produccion como por la ruta multi-anual forzada.
     todos_ok = all(r["probabilidad_en_rango_0_1"] for r in resultados)
+    todos_ma_ok = all(r["probabilidad_en_rango_0_1"] for r in evidencia_multianio)
     assert todos_ok, "Algun caso no produjo probabilidad en [0,1]."
+    assert todos_ma_ok, "Algun caso de la ruta multi-anual no produjo probabilidad en [0,1]."
     print("\n" + "=" * 90)
     print(f"Evidencia guardada en: {ruta_json}")
-    print(f"Casos evaluados: {len(resultados)} | Todos con probabilidad en [0,1]: {todos_ok}")
+    print(f"Casos evaluados (ruta produccion): {len(resultados)} | Todos con prob en [0,1]: {todos_ok}")
+    print(f"Casos evaluados (ruta multi-anual forzada): {len(evidencia_multianio)} | "
+          f"Todos con prob en [0,1]: {todos_ma_ok}")
     print("Demo de entrada parcial completada con exito.")
     print("=" * 90)
 

@@ -78,7 +78,7 @@
     },
     {
       "corte": "Corte Cobertura Media (Top 5.0% más riesgoso)",
-      "umbral": 0.21787271538458183,
+      "umbral": 0.21787271538458186,
       "empresas_alertadas": 200,
       "quiebras_detectadas_TP": 32,
       "total_quiebras_reales": 61,

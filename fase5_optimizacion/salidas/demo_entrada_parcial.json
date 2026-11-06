@@ -2,7 +2,7 @@
   "proposito": "Demostrar que una empresa con datos parciales (cuentas faltantes y/o sin historia plurianual) recibe una probabilidad calibrada en [0,1] por la MISMA ruta de inferencia de produccion, sin excepciones.",
   "usar_features_multianio": false,
   "ruta_inferencia": "construir_matriz_caracteristicas -> seleccion modelo['features'] -> ensamble ponderado (calcular_pesos_ensamble) -> calibrador isotonico -> zonas por modelo['umbrales']",
-  "estrategia_faltantes": "Imputacion-neutral dentro de construir_matriz_caracteristicas (fillna/clip/division_segura) para cuentas del corte t ausentes, y flags de cobertura + variacion neutra 0.0 para la historia plurianual ausente. X queda sin NaN, manteniendo operativo a RandomForest (que no acepta NaN).",
+  "estrategia_faltantes": "Imputacion-neutral dentro de construir_matriz_caracteristicas (fillna/clip/division_segura) para TODAS las cuentas del corte t ausentes, incluidos los totales estructurales del balance y el nucleo del estado de resultados (ampliacion HALLAZGO #2), y flags de cobertura + variacion neutra 0.0 para la historia plurianual ausente. X queda sin NaN, manteniendo operativo a RandomForest (que no acepta NaN).",
   "n_modelos_ensamble": 4,
   "n_features": 90,
   "umbrales_zona": {
@@ -55,6 +55,54 @@
       "probabilidad_en_rango_0_1": true,
       "zona_semaforo": "1. VERDE (Estable / Sano)",
       "excepcion": null
+    },
+    {
+      "caso": "D",
+      "descripcion": "balance incompleto: totales estructurales ausentes",
+      "nit": "800000276",
+      "razon_social": "EMPRESA DEMO D (BALANCE INCOMPLETO, TOTALES AUSENTES)",
+      "cuentas_corte_t_faltantes": [
+        "Efectivo y equivalentes al efectivo (CashAndCashEquivalents)",
+        "Flujos de efectivo netos procedentes de (utilizados en) actividades de operación (CashFlowsFromUsedInOperatingActivities)",
+        "Ganancia (pérdida) por actividades de operación (GananciaPerdidaPorActividadesDeOperacion)",
+        "Costos financieros (FinanceCosts)"
+      ],
+      "num_cuentas_faltantes": 4,
+      "score_ensamble": 0.036478,
+      "probabilidad_calibrada_quiebra": 0.007299,
+      "probabilidad_en_rango_0_1": true,
+      "zona_semaforo": "1. VERDE (Estable / Sano)",
+      "excepcion": null
     }
-  ]
+  ],
+  "evidencia_ruta_multianual_forzada": {
+    "proposito": "Ejercer EXPLICITAMENTE la ruta multi-anual (construir_features_multianio) para una fila SIN historia (CASO A) y una con HISTORIA PARCIAL (CASO B), forzando el bloque plurianual INDEPENDIENTEMENTE del valor de produccion de la bandera (que sigue en False por defecto). Demuestra que ambas filas atraviesan la construccion plurianual sin excepcion y producen prob en [0,1].",
+    "bandera_produccion_sin_cambios": false,
+    "casos": [
+      {
+        "caso": "A",
+        "descripcion": "sin historia plurianual",
+        "ruta": "multi-anual FORZADA (construir_features_multianio ejercido)",
+        "anios_historia_disponible": 0,
+        "flag_sin_historia_3a": 1,
+        "flag_historia_parcial": 0,
+        "ventana_plena": 4,
+        "probabilidad_calibrada_quiebra": 0.017816,
+        "probabilidad_en_rango_0_1": true,
+        "sin_excepcion": true
+      },
+      {
+        "caso": "B",
+        "descripcion": "historia parcial (solo 2023 y 2024)",
+        "ruta": "multi-anual FORZADA (construir_features_multianio ejercido)",
+        "anios_historia_disponible": 2,
+        "flag_sin_historia_3a": 0,
+        "flag_historia_parcial": 1,
+        "ventana_plena": 4,
+        "probabilidad_calibrada_quiebra": 0.008264,
+        "probabilidad_en_rango_0_1": true,
+        "sin_excepcion": true
+      }
+    ]
+  }
 }
